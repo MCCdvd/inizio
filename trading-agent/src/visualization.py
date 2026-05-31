@@ -72,14 +72,20 @@ class VolumeProfileVisualizer:
         """Plot training metrics"""
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
         
-        ax1.plot(episode_rewards, linewidth=2, color='steelblue')
-        ax1.fill_between(range(len(episode_rewards)), episode_rewards, alpha=0.3)
+        # Flatten and convert to lists to ensure 1D arrays
+        episode_rewards_flat = [float(r) if hasattr(r, '__float__') else r for r in episode_rewards]
+        episode_portfolios_flat = [float(p) if hasattr(p, '__float__') else p for p in episode_portfolios]
+        
+        # Plot rewards
+        ax1.plot(episode_rewards_flat, linewidth=2, color='steelblue')
+        ax1.fill_between(range(len(episode_rewards_flat)), episode_rewards_flat, alpha=0.3)
         ax1.set_xlabel('Episode')
         ax1.set_ylabel('Cumulative Reward')
         ax1.set_title('Training Rewards Over Episodes')
         ax1.grid(True, alpha=0.3)
         
-        returns = [(portfolio - 10000) / 10000 * 100 for portfolio in episode_portfolios]
+        # Plot returns
+        returns = [(portfolio - 10000) / 10000 * 100 for portfolio in episode_portfolios_flat]
         ax2.plot(returns, linewidth=2, color='green')
         ax2.fill_between(range(len(returns)), returns, alpha=0.3, color='green')
         ax2.axhline(y=0, color='black', linestyle='-', linewidth=1)
