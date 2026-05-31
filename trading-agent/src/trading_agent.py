@@ -83,9 +83,10 @@ class TradingEnvironmentWithVolumeProfile:
         self.volumes = []
         self.lookback_days = lookback_days
         
-        self.poc = None
-        self.vah = None
-        self.val = None
+        # Initialize volume profile levels to 0 instead of None
+        self.poc = 0.0
+        self.vah = 0.0
+        self.val = 0.0
         
     def load_data(self, start_date: str, end_date: str):
         """Load historical stock data"""
@@ -132,21 +133,24 @@ class TradingEnvironmentWithVolumeProfile:
         portfolio_value = self.balance + (self.shares_held * current_price)
         balance_ratio = self.balance / self.initial_balance
         
-        poc_dist = (current_price - self.poc) / self.poc if self.poc > 0 else 0
-        vah_dist = (current_price - self.vah) / self.vah if self.vah > 0 else 0
-        val_dist = (current_price - self.val) / self.val if self.val > 0 else 0
+        # Safe division with default values if levels are 0
+        poc_dist = (current_price - self.poc) / self.poc if self.poc > 0 else 0.0
+        vah_dist = (current_price - self.vah) / self.vah if self.vah > 0 else 0.0
+        val_dist = (current_price - self.val) / self.val if self.val > 0 else 0.0
         
         recent_prices = self.prices[max(0, self.current_step - 100):self.current_step]
-        price_norm = current_price / np.max(recent_prices) if len(recent_prices) > 0 else 0
+        price_norm = current_price / np.max(recent_prices) if len(recent_prices) > 0 else 0.0
         
-        return np.array([
-            balance_ratio,
-            self.shares_held / 100,
-            poc_dist,
-            vah_dist,
-            val_dist,
-            price_norm
+        state = np.array([
+            float(balance_ratio),
+            float(self.shares_held / 100),
+            float(poc_dist),
+            float(vah_dist),
+            float(val_dist),
+            float(price_norm)
         ], dtype=np.float32)
+        
+        return state
     
     def step(self, action: int) -> Tuple[np.ndarray, float, bool]:
         """Execute trading action"""
