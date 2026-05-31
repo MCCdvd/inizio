@@ -197,7 +197,8 @@ class PPOAgent(BaseAgent):
                     log_probs = tf.math.log(tf.reduce_sum(new_policies * tf.one_hot(actions, self.action_size), axis=1) + 1e-8)
                     actor_loss = -tf.reduce_mean(log_probs * advantages)
                     
-                    critic_loss = tf.reduce_mean((new_values.flatten() - returns) ** 2)
+                    # Use tf.reshape instead of .flatten() for TensorFlow tensors
+                    critic_loss = tf.reduce_mean((tf.reshape(new_values, [-1]) - returns) ** 2)
                     
                     total_loss = actor_loss + critic_loss
                 
@@ -300,7 +301,7 @@ class A3CAgent(BaseAgent):
             
             with tf.GradientTape() as tape:
                 policies = self.actor(states, training=True)
-                values = self.critic(states, training=True).flatten()
+                values = tf.reshape(self.critic(states, training=True), [-1])
                 
                 advantages = returns - values
                 
