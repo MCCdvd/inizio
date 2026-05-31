@@ -45,8 +45,8 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50):
         agent.train(batch_size)
         agent.decay_epsilon()
         
-        portfolio_value = env.balance + (env.shares_held * env.prices[env.current_step - 1])
-        final_return = ((portfolio_value - env.initial_balance) / env.initial_balance) * 100
+        portfolio_value = float(env.balance + (env.shares_held * env.prices[env.current_step - 1]))
+        final_return = float(((portfolio_value - env.initial_balance) / env.initial_balance) * 100)
         
         episode_rewards.append(total_reward)
         episode_portfolios.append(portfolio_value)
@@ -111,8 +111,8 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50):
         
         agent.train()
         
-        portfolio_value = env.balance + (env.shares_held * env.prices[env.current_step - 1])
-        final_return = ((portfolio_value - env.initial_balance) / env.initial_balance) * 100
+        portfolio_value = float(env.balance + (env.shares_held * env.prices[env.current_step - 1]))
+        final_return = float(((portfolio_value - env.initial_balance) / env.initial_balance) * 100)
         
         episode_rewards.append(total_reward)
         episode_portfolios.append(portfolio_value)
@@ -172,8 +172,8 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50):
         
         agent.train()
         
-        portfolio_value = env.balance + (env.shares_held * env.prices[env.current_step - 1])
-        final_return = ((portfolio_value - env.initial_balance) / env.initial_balance) * 100
+        portfolio_value = float(env.balance + (env.shares_held * env.prices[env.current_step - 1]))
+        final_return = float(((portfolio_value - env.initial_balance) / env.initial_balance) * 100)
         
         episode_rewards.append(total_reward)
         episode_portfolios.append(portfolio_value)
