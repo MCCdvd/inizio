@@ -21,15 +21,15 @@ one/
 
 ## Setup
 
-1. Place your OHLCV market data as `data/AAPL.csv` (daily ohlcv, with cols: 'close', 'poc', 'vah', 'val', etc)
-2. Install requirements (TensorFlow, pandas, numpy, matplotlib)
+1. Install requirements (TensorFlow, pandas, numpy, matplotlib, yfinance)
+2. Market data is automatically fetched from Yahoo Finance during training
 3. Run training:
 
 ```bash
 python one/train.py
 ```
 
-Edit `one/config.yaml` for hyperparameters, or expand to include PPO/A3C agents.
+The training script will download OHLCV data for the specified ticker from Yahoo Finance. Edit `one/config.yaml` for hyperparameters, data source configuration, or to expand and include PPO/A3C agents.
 
 ---
 
