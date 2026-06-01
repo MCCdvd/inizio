@@ -24,10 +24,15 @@ df = yf.download(ticker, start="2020-01-01", end="2023-12-31", progress=False)
 # Reset index to make Date a column
 df = df.reset_index()
 
-# Rename columns to match expected format (lowercase)
+# Flatten multi-level columns if needed
+if isinstance(df.columns[0], tuple):
+    df.columns = ['_'.join(col).strip() if isinstance(col, tuple) else col for col in df.columns]
+
+# Rename columns to lowercase
 df.columns = [col.lower() for col in df.columns]
 
 print(f"Data shape: {df.shape}")
+print(f"Data columns: {df.columns.tolist()}")
 print(f"Data date range: {df['date'].min()} to {df['date'].max()}")
 
 # Select only OHLCV columns
