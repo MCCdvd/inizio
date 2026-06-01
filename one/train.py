@@ -1,6 +1,20 @@
 import sys
 import os
 
+# Enable GPU memory growth to avoid OOM errors
+try:
+    import tensorflow as tf
+    gpus = tf.config.list_physical_devices('GPU')
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if gpus:
+        print(f"GPU(s) detected: {len(gpus)}")
+        print(f"GPU device: {gpus[0].name}")
+    else:
+        print("No GPU detected. Using CPU.")
+except Exception as e:
+    print(f"GPU setup warning: {e}")
+
 # Add the one directory to Python path so modules can be found
 sys.path.insert(0, os.path.dirname(__file__))
 
