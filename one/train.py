@@ -1,6 +1,8 @@
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+
+# Add the one directory to Python path so modules can be found
+sys.path.insert(0, os.path.dirname(__file__))
 
 import pandas as pd
 import yfinance as yf
