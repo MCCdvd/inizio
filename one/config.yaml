@@ -1,0 +1,6 @@
+initial_balance: 10000
+episodes: 50
+batch_size: 32
+epsilon_decay: 0.995
+gamma: 0.99
+lr: 0.001
