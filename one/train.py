@@ -21,14 +21,17 @@ ticker = "AAPL"  # Change this to any stock ticker
 print(f"Fetching data for {ticker} from Yahoo Finance...")
 df = yf.download(ticker, start="2020-01-01", end="2023-12-31", progress=False)
 
-# Rename columns to match expected format (OHLCV)
-df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
-df.columns = ['open', 'high', 'low', 'close', 'volume']
+# Reset index to make Date a column
 df = df.reset_index()
-df = df.rename(columns={'Date': 'date'})
+
+# Rename columns to match expected format (lowercase)
+df.columns = [col.lower() for col in df.columns]
 
 print(f"Data shape: {df.shape}")
 print(f"Data date range: {df['date'].min()} to {df['date'].max()}")
+
+# Select only OHLCV columns
+df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
 
 # Add technical indicators
 df = add_indicators(df.dropna())
