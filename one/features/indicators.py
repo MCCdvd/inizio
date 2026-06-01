@@ -1,33 +1,38 @@
 import pandas as pd
 import numpy as np
 
-def compute_rsi(series, window=14):
-    delta = series.diff()
-    gain = np.where(delta > 0, delta, 0)
-    loss = np.where(delta < 0, -delta, 0)
-    avg_gain = pd.Series(gain).rolling(window=window).mean()
-    avg_loss = pd.Series(loss).rolling(window=window).mean()
-    rs = avg_gain / (avg_loss + 1e-9)
-    return 100 - (100 / (1 + rs))
-
-def compute_macd(close, a=12, b=26, signal=9):
-    ema_fast = close.ewm(span=a, min_periods=a).mean()
-    ema_slow = close.ewm(span=b, min_periods=b).mean()
-    macd = ema_fast - ema_slow
-    signal_line = macd.ewm(span=signal, min_periods=signal).mean()
-    return macd, signal_line
-
 def add_indicators(df):
-    df['rsi'] = compute_rsi(df['close'])
-    macd, macd_signal = compute_macd(df['close'])
-    df['macd'] = macd
-    df['macd_signal'] = macd_signal
-    df['ma20'] = df['close'].rolling(window=20).mean()
-    df['ma50'] = df['close'].rolling(window=50).mean()
-    df['volatility'] = df['close'].rolling(window=20).std()
-    # Assume value profile columns are already in df (poc, vah, val)
-    df['poc_distance'] = (df['close'] - df['poc']) / df['poc']
-    df['vah_distance'] = (df['close'] - df['vah']) / df['vah']
-    df['val_distance'] = (df['close'] - df['val']) / df['val']
-    df['price_norm'] = df['close'] / df['close'].rolling(window=50).max()
-    return df
+    """Add technical indicators to the dataframe."""
+    df = df.copy()
+    
+    # Simple Moving Averages
+    df['sma_10'] = df['close'].rolling(window=10).mean()
+    df['sma_20'] = df['close'].rolling(window=20).mean()
+    
+    # Exponential Moving Average
+    df['ema_10'] = df['close'].ewm(span=10).mean()
+    
+    # Relative Strength Index (RSI)
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['rsi'] = 100 - (100 / (1 + rs))
+    
+    # MACD
+    df['ema_12'] = df['close'].ewm(span=12).mean()
+    df['ema_26'] = df['close'].ewm(span=26).mean()
+    df['macd'] = df['ema_12'] - df['ema_26']
+    df['signal_line'] = df['macd'].ewm(span=9).mean()
+    df['macd_histogram'] = df['macd'] - df['signal_line']
+    
+    # Bollinger Bands
+    df['bb_mid'] = df['close'].rolling(window=20).mean()
+    bb_std = df['close'].rolling(window=20).std()
+    df['bb_upper'] = df['bb_mid'] + (bb_std * 2)
+    df['bb_lower'] = df['bb_mid'] - (bb_std * 2)
+    
+    # Volume indicators
+    df['volume_sma'] = df['volume'].rolling(window=20).mean()
+    
+    return df.dropna()
