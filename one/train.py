@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+
 import pandas as pd
 import yfinance as yf
 import yaml
@@ -6,7 +10,8 @@ from env.trading_env import TradingEnv
 from agents.dqn_agent import DQNAgent
 
 # Load config
-with open('one/config.yaml', 'r') as f:
+config_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+with open(config_path, 'r') as f:
     config = yaml.safe_load(f)
 
 # Fetch data from Yahoo Finance
