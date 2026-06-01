@@ -37,9 +37,9 @@ df.columns = [col.replace(f'_{ticker.lower()}', '') for col in df.columns]
 print(f"Data shape: {df.shape}")
 print(f"Data columns: {df.columns.tolist()}")
 
-# Rename 'index_' to 'date' if it exists
-if 'index_' in df.columns:
-    df = df.rename(columns={'index_': 'date'})
+# Rename 'index' to 'date' if it exists
+if 'index' in df.columns:
+    df = df.rename(columns={'index': 'date'})
 
 print(f"Data date range: {df['date'].min()} to {df['date'].max()}")
 
