@@ -1,6 +1,11 @@
 initial_balance: 10000
 episodes: 50
 batch_size: 32
-epsilon_decay: 0.995
+epsilon_decay: 0.98        # Slower decay for extended exploration
+epsilon_min: 0.01
 gamma: 0.99
 lr: 0.001
+
+# Logging and metrics
+log_metrics: true
+log_interval: 5            # Log metrics every N episodes
