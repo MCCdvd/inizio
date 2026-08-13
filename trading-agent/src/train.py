@@ -8,16 +8,17 @@ from trading_agent import TradingEnvironmentWithVolumeProfile
 from agents import DQNAgent, PPOAgent, A3CAgent
 from visualization import VolumeProfileVisualizer
 import argparse
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50):
+def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None):
     """Train DQN agent"""
-    print(f"\n{'='*60}")
-    print(f"Training DQN Agent on {stock_symbol}")
-    print(f"{'='*60}\n")
+    logger.info(f"Training DQN Agent on {stock_symbol}")
     
-    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30)
-    agent = DQNAgent(state_size=6, action_size=3)
+    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed)
+    agent = DQNAgent(state_size=6, action_size=3, seed=seed)
     
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
@@ -52,12 +53,12 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50):
         episode_portfolios.append(portfolio_value)
         
         if (episode + 1) % 10 == 0:
-            print(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}% | Epsilon: {agent.epsilon:.3f}")
+            logger.info(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}% | Epsilon: {agent.epsilon:.3f}")
     
-    print(f"\nTraining completed!")
-    print(f"Final Portfolio: ${portfolio_value:,.2f}")
-    print(f"Final Return: {final_return:+.2f}%")
-    print(f"Total Trades: {len(env.trades)}")
+    logger.info("Training completed!")
+    logger.info(f"Final Portfolio: ${portfolio_value:,.2f}")
+    logger.info(f"Final Return: {final_return:+.2f}%")
+    logger.info(f"Total Trades: {len(env.trades)}")
     
     VolumeProfileVisualizer.plot_volume_profile(env.prices, env.volumes, env.poc, env.vah, env.val, 
                                                trades=env.trades, title=f"DQN Agent - {stock_symbol}")
@@ -73,14 +74,12 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50):
     }
 
 
-def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50):
+def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None):
     """Train PPO agent"""
-    print(f"\n{'='*60}")
-    print(f"Training PPO Agent on {stock_symbol}")
-    print(f"{'='*60}\n")
+    logger.info(f"Training PPO Agent on {stock_symbol}")
     
-    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30)
-    agent = PPOAgent(state_size=6, action_size=3)
+    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed)
+    agent = PPOAgent(state_size=6, action_size=3, seed=seed)
     
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
@@ -95,8 +94,11 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50):
         
         while True:
             action = agent.act(state)
-            if agent.critic:
-                value = agent.critic.predict(state.reshape(1, -1), verbose=0)[0][0]
+            if hasattr(agent, 'critic') and agent.critic is not None:
+                try:
+                    value = agent.critic.predict(state.reshape(1, -1), verbose=0)[0][0]
+                except Exception:
+                    value = 0
             else:
                 value = 0
             
@@ -118,12 +120,12 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50):
         episode_portfolios.append(portfolio_value)
         
         if (episode + 1) % 10 == 0:
-            print(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}%")
+            logger.info(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}%")
     
-    print(f"\nTraining completed!")
-    print(f"Final Portfolio: ${portfolio_value:,.2f}")
-    print(f"Final Return: {final_return:+.2f}%")
-    print(f"Total Trades: {len(env.trades)}")
+    logger.info("Training completed!")
+    logger.info(f"Final Portfolio: ${portfolio_value:,.2f}")
+    logger.info(f"Final Return: {final_return:+.2f}%")
+    logger.info(f"Total Trades: {len(env.trades)}")
     
     VolumeProfileVisualizer.plot_volume_profile(env.prices, env.volumes, env.poc, env.vah, env.val,
                                                trades=env.trades, title=f"PPO Agent - {stock_symbol}")
@@ -139,14 +141,12 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50):
     }
 
 
-def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50):
+def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None):
     """Train A3C agent"""
-    print(f"\n{'='*60}")
-    print(f"Training A3C Agent on {stock_symbol}")
-    print(f"{'='*60}\n")
+    logger.info(f"Training A3C Agent on {stock_symbol}")
     
-    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30)
-    agent = A3CAgent(state_size=6, action_size=3)
+    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed)
+    agent = A3CAgent(state_size=6, action_size=3, seed=seed)
     
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
@@ -179,12 +179,12 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50):
         episode_portfolios.append(portfolio_value)
         
         if (episode + 1) % 10 == 0:
-            print(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}%")
+            logger.info(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}%")
     
-    print(f"\nTraining completed!")
-    print(f"Final Portfolio: ${portfolio_value:,.2f}")
-    print(f"Final Return: {final_return:+.2f}%")
-    print(f"Total Trades: {len(env.trades)}")
+    logger.info("Training completed!")
+    logger.info(f"Final Portfolio: ${portfolio_value:,.2f}")
+    logger.info(f"Final Return: {final_return:+.2f}%")
+    logger.info(f"Total Trades: {len(env.trades)}")
     
     VolumeProfileVisualizer.plot_volume_profile(env.prices, env.volumes, env.poc, env.vah, env.val,
                                                trades=env.trades, title=f"A3C Agent - {stock_symbol}")
@@ -205,20 +205,22 @@ if __name__ == "__main__":
     parser.add_argument('--algorithm', choices=['dqn', 'ppo', 'a3c', 'all'], default='dqn', help='RL algorithm to use')
     parser.add_argument('--stock', default='AAPL', help='Stock symbol')
     parser.add_argument('--episodes', type=int, default=50, help='Number of training episodes')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
     parser.add_argument('--compare', action='store_true', help='Compare multiple stocks')
     
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
     
     if args.algorithm == 'dqn':
-        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes)
+        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
     elif args.algorithm == 'ppo':
-        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes)
+        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
     elif args.algorithm == 'a3c':
-        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes)
+        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
     elif args.algorithm == 'all':
-        dqn_result = train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes)
-        ppo_result = train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes)
-        a3c_result = train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes)
+        dqn_result = train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
+        ppo_result = train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
+        a3c_result = train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
         
         results = {
             'DQN': dqn_result,
