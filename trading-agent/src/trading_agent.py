@@ -3,6 +3,7 @@ Trading Agent Environment with Volume Profile Analysis
 """
 import numpy as np
 import pandas as pd
+import random
 from typing import Tuple, List, Dict, Optional
 import yfinance as yf
 from datetime import datetime, timedelta
@@ -12,9 +13,9 @@ class VolumeProfileAnalyzer:
     """Calculate volume profile and identify key levels"""
     
     def __init__(self, price_data: np.ndarray, volume_data: np.ndarray, bins: int = 100):
-        self.price_data = price_data
-        self.volume_data = volume_data
-        self.bins = bins
+        self.price_data = np.asarray(price_data)
+        self.volume_data = np.asarray(volume_data)
+        self.bins = int(bins)
         self.profile = None
         self.poc = None
         self.vah = None
@@ -32,34 +33,26 @@ class VolumeProfileAnalyzer:
         if min_price == max_price:
             # Degenerate case: all prices identical
             profile = np.zeros(self.bins)
-            profile[0] = np.sum(self.volume_data)
-            bins = np.linspace(min_price, max_price + 1e-6, self.bins + 1)
-            bin_centers = (bins[:-1] + bins[1:]) / 2
+            profile[0] = float(np.sum(self.volume_data))
+            edges = np.linspace(min_price, max_price + 1e-6, self.bins + 1)
+            centers = (edges[:-1] + edges[1:]) / 2
             self.profile = profile
-            self.bin_edges = bins
-            self.bin_centers = bin_centers
-            self.poc = bin_centers[0]
-            self.vah = bin_centers[0]
-            self.val = bin_centers[0]
-            return {'poc': self.poc, 'vah': self.vah, 'val': self.val, 'profile': profile, 'bins': bin_centers}
+            self.bin_edges = edges
+            self.bin_centers = centers
+            self.poc = float(centers[0])
+            self.vah = float(centers[0])
+            self.val = float(centers[0])
+            return {'poc': self.poc, 'vah': self.vah, 'val': self.val, 'profile': profile, 'bins': centers}
         
         # Create price bin edges (bins+1 edges) and bin centers
         edges = np.linspace(min_price, max_price, self.bins + 1)
         centers = (edges[:-1] + edges[1:]) / 2
-        bin_indices = np.digitize(self.price_data, edges) - 1  # shift to 0-based
-        
-        # Aggregate volume by price bin
-        profile = np.zeros(self.bins)
-        for i, vol in enumerate(self.volume_data):
-            idx = int(bin_indices[i])
-            if 0 <= idx < self.bins:
-                profile[idx] += vol
-            else:
-                # Clamp out-of-range indices to nearest bin
-                if idx < 0:
-                    profile[0] += vol
-                elif idx >= self.bins:
-                    profile[-1] += vol
+        # np.digitize returns 1..len(edges); shift to 0-based bin indices
+        bin_indices = np.digitize(self.price_data, edges) - 1
+        # clamp to valid range
+        bin_indices_clamped = np.clip(bin_indices, 0, self.bins - 1).astype(int)
+        # vectorized aggregation
+        profile = np.bincount(bin_indices_clamped, weights=self.volume_data, minlength=self.bins)[:self.bins].astype(float)
         
         self.profile = profile
         self.bin_edges = edges
@@ -67,7 +60,7 @@ class VolumeProfileAnalyzer:
         
         # Calculate Point of Control (POC)
         poc_idx = int(np.argmax(profile))
-        self.poc = centers[poc_idx]
+        self.poc = float(centers[poc_idx])
         
         # Calculate Value Area (70% of volume)
         sorted_indices = np.argsort(profile)[::-1]
@@ -77,7 +70,7 @@ class VolumeProfileAnalyzer:
         
         value_area_indices = []
         for idx in sorted_indices:
-            cumsum += profile[int(idx)]
+            cumsum += float(profile[int(idx)])
             value_area_indices.append(int(idx))
             if cumsum >= target_vol:
                 break
@@ -102,17 +95,22 @@ class VolumeProfileAnalyzer:
 class TradingEnvironmentWithVolumeProfile:
     """Stock trading environment using volume profile for targets"""
     
-    def __init__(self, stock_symbol: str, initial_balance: float = 10000, lookback_days: int = 30):
+    def __init__(self, stock_symbol: str, initial_balance: float = 10000, lookback_days: int = 30, seed: Optional[int] = None):
         self.stock_symbol = stock_symbol
-        self.initial_balance = initial_balance
-        self.balance = initial_balance
+        self.initial_balance = float(initial_balance)
+        self.balance = float(initial_balance)
         self.shares_held = 0
         self.entry_price: Optional[float] = None
         self.trades = []
         self.current_step = 0
         self.prices: np.ndarray = np.array([])
         self.volumes: np.ndarray = np.array([])
-        self.lookback_days = lookback_days
+        self.lookback_days = int(lookback_days)
+        self.seed = seed
+
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
         
         # Initialize volume profile levels to 0 instead of None
         self.poc = 0.0
@@ -132,13 +130,13 @@ class TradingEnvironmentWithVolumeProfile:
     
     def update_volume_profile(self, lookback_window: int = None):
         """Update volume profile based on historical data"""
+        if len(self.prices) == 0:
+            return
+
         if lookback_window is None:
             lookback_window = min(self.lookback_days, max(2, self.current_step))
         else:
-            lookback_window = max(2, lookback_window)
-        
-        if len(self.prices) == 0:
-            return
+            lookback_window = max(2, int(lookback_window))
         
         start_idx = max(0, int(self.current_step - lookback_window))
         end_idx = int(min(self.current_step, len(self.prices)))
@@ -152,13 +150,13 @@ class TradingEnvironmentWithVolumeProfile:
         analyzer = VolumeProfileAnalyzer(prices, volumes, bins=50)
         profile = analyzer.calculate_profile()
         
-        self.poc = profile.get('poc', 0.0) or 0.0
-        self.vah = profile.get('vah', 0.0) or 0.0
-        self.val = profile.get('val', 0.0) or 0.0
+        self.poc = float(profile.get('poc', 0.0) or 0.0)
+        self.vah = float(profile.get('vah', 0.0) or 0.0)
+        self.val = float(profile.get('val', 0.0) or 0.0)
     
     def reset(self):
         """Reset environment to initial state"""
-        self.balance = self.initial_balance
+        self.balance = float(self.initial_balance)
         self.shares_held = 0
         self.entry_price = None
         self.trades = []
