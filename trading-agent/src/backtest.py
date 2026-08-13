@@ -1,6 +1,3 @@
-"""
-Backtesting framework for trading strategies
-"""
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
@@ -8,31 +5,38 @@ from trading_agent import TradingEnvironmentWithVolumeProfile
 from agents import DQNAgent, PPOAgent, A3CAgent
 from visualization import VolumeProfileVisualizer
 import argparse
+import logging
+import json
+
+logger = logging.getLogger(__name__)
 
 
 class BacktestEngine:
     """Backtesting engine for trading strategies"""
     
-    def __init__(self, stock_symbol: str, initial_capital: float = 10000, transaction_cost: float = 0.001):
+    def __init__(self, stock_symbol: str, initial_capital: float = 10000, transaction_cost: float = 0.001, seed: int = None):
         self.stock_symbol = stock_symbol
         self.initial_capital = initial_capital
         self.transaction_cost = transaction_cost
-    
-    def run_backtest(self, start_date: str, end_date: str, algorithm: str = 'dqn', episodes: int = 50):
+        self.seed = seed
+        if seed is not None:
+            np.random.seed(seed)
+
+    def run_backtest(self, start_date: str, end_date: str, algorithm: str = 'dqn', episodes: int = 50, backend: str = 'auto', output_csv: str = None, output_json: str = None):
         """Run backtest with specified algorithm"""
-        print(f"\nBacktesting {self.stock_symbol} from {start_date} to {end_date}")
-        print(f"Algorithm: {algorithm.upper()}, Episodes: {episodes}\n")
+        logger.info(f"Backtesting {self.stock_symbol} from {start_date} to {end_date}")
+        logger.info(f"Algorithm: {algorithm.upper()}, Episodes: {episodes}, Backend: {backend}")
         
-        env = TradingEnvironmentWithVolumeProfile(self.stock_symbol, initial_balance=self.initial_capital)
-        
+        env = TradingEnvironmentWithVolumeProfile(self.stock_symbol, initial_balance=self.initial_capital, seed=self.seed)
         env.load_data(start_date, end_date)
         
+        # select agent
         if algorithm.lower() == 'dqn':
-            agent = DQNAgent()
+            agent = DQNAgent(seed=self.seed)
         elif algorithm.lower() == 'ppo':
-            agent = PPOAgent()
+            agent = PPOAgent(seed=self.seed)
         elif algorithm.lower() == 'a3c':
-            agent = A3CAgent()
+            agent = A3CAgent(seed=self.seed)
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
         
@@ -44,41 +48,39 @@ class BacktestEngine:
             state = env.reset()
             
             while True:
-                if algorithm.lower() == 'dqn':
-                    action = agent.act(state)
-                    next_state, reward, done = env.step(action)
+                action = agent.act(state)
+                next_state, reward, done = env.step(action)
+
+                # training bookkeeping
+                if isinstance(agent, DQNAgent):
                     agent.remember(state, action, reward, next_state, done)
-                    
                     if done:
-                        break
-                    agent.train(batch_size=32)
-                    agent.decay_epsilon()
-                    
-                elif algorithm.lower() == 'ppo':
-                    action = agent.act(state)
-                    if agent.critic:
-                        value = agent.critic.predict(state.reshape(1, -1), verbose=0)[0][0]
+                        agent.train(batch_size=32)
+                        agent.decay_epsilon()
+                    else:
+                        agent.train(batch_size=32)
+                elif isinstance(agent, PPOAgent):
+                    if hasattr(agent, 'critic') and agent.critic is not None:
+                        try:
+                            value = agent.critic.predict(state.reshape(1, -1), verbose=0)[0][0]
+                        except Exception:
+                            value = 0
                     else:
                         value = 0
                     next_state, reward, done = env.step(action)
                     agent.store_transition(state, action, reward, value)
-                    
                     if done:
                         agent.train()
-                        break
-                
-                elif algorithm.lower() == 'a3c':
-                    action = agent.act(state)
-                    next_state, reward, done = env.step(action)
+                elif isinstance(agent, A3CAgent):
                     agent.store_transition(state, action, reward)
-                    
                     if done:
                         agent.train()
-                        break
-                
+
                 state = next_state
-            
-            portfolio_value = env.balance + (env.shares_held * env.prices[env.current_step - 1])
+                if done:
+                    break
+
+            portfolio_value = env.balance + (env.shares_held * env.prices[min(env.current_step - 1, len(env.prices)-1)])
             returns = ((portfolio_value - self.initial_capital) / self.initial_capital) * 100
             episode_returns.append(returns)
             
@@ -87,10 +89,10 @@ class BacktestEngine:
                 best_episode = episode + 1
             
             if (episode + 1) % 10 == 0:
-                print(f"Episode {episode+1}: Portfolio ${portfolio_value:,.2f}, Return {returns:+.2f}%")
+                logger.info(f"Episode {episode+1}: Portfolio ${portfolio_value:,.2f}, Return {returns:+.2f}%")
         
         # Calculate metrics
-        final_portfolio = env.balance + (env.shares_held * env.prices[-1])
+        final_portfolio = env.balance + (env.shares_held * env.prices[-1]) if len(env.prices) > 0 else env.balance
         final_return = ((final_portfolio - self.initial_capital) / self.initial_capital) * 100
         
         buy_trades = [t for t in env.trades if t['type'] == 'BUY']
@@ -123,31 +125,47 @@ class BacktestEngine:
         
         self._print_results(results)
         self._plot_results(env, results)
+
+        # Export results
+        if output_csv:
+            try:
+                df = pd.DataFrame(results['trades'])
+                df.to_csv(output_csv, index=False)
+                logger.info(f"Wrote trades CSV to {output_csv}")
+            except Exception as e:
+                logger.warning(f"Failed to write CSV: {e}")
+        if output_json:
+            try:
+                with open(output_json, 'w') as f:
+                    json.dump(results, f, default=str, indent=2)
+                logger.info(f"Wrote results JSON to {output_json}")
+            except Exception as e:
+                logger.warning(f"Failed to write JSON: {e}")
         
         return results
     
     def _print_results(self, results):
         """Print backtest results"""
-        print(f"\n{'='*60}")
-        print(f"BACKTEST RESULTS - {results['symbol']}")
-        print(f"{'='*60}\n")
-        print(f"Period: {results['start_date']} to {results['end_date']}")
-        print(f"Algorithm: {results['algorithm'].upper()}")
-        print(f"\nCapital:")
-        print(f"  Initial: ${results['initial_capital']:,.2f}")
-        print(f"  Final: ${results['final_portfolio']:,.2f}")
-        print(f"  Return: {results['total_return_pct']:+.2f}%")
-        print(f"\nTrading:")
-        print(f"  Total Trades: {results['total_trades']}")
-        print(f"  Buy Trades: {results['buy_trades']}")
-        print(f"  Sell Trades: {results['sell_trades']}")
-        print(f"  Winning Trades: {results['winning_trades']}")
-        print(f"  Win Rate: {results['win_rate_pct']:.1f}%")
-        print(f"\nPerformance:")
-        print(f"  Avg Return/Trade: {results['avg_return_per_trade']:+.2f}%")
-        print(f"  Best Episode: #{results['best_episode']}")
-        print(f"  Best Portfolio Value: ${results['best_portfolio']:,.2f}")
-        print(f"\n{'='*60}\n")
+        logger.info("="*60)
+        logger.info(f"BACKTEST RESULTS - {results['symbol']}")
+        logger.info("="*60)
+        logger.info(f"Period: {results['start_date']} to {results['end_date']}")
+        logger.info(f"Algorithm: {results['algorithm'].upper()}")
+        logger.info("\nCapital:")
+        logger.info(f"  Initial: ${results['initial_capital']:,.2f}")
+        logger.info(f"  Final: ${results['final_portfolio']:,.2f}")
+        logger.info(f"  Return: {results['total_return_pct']:+.2f}%")
+        logger.info("\nTrading:")
+        logger.info(f"  Total Trades: {results['total_trades']}")
+        logger.info(f"  Buy Trades: {results['buy_trades']}")
+        logger.info(f"  Sell Trades: {results['sell_trades']}")
+        logger.info(f"  Winning Trades: {results['winning_trades']}")
+        logger.info(f"  Win Rate: {results['win_rate_pct']:.1f}%")
+        logger.info("\nPerformance:")
+        logger.info(f"  Avg Return/Trade: {results['avg_return_per_trade']:+.2f}%")
+        logger.info(f"  Best Episode: #{results['best_episode']}")
+        logger.info(f"  Best Portfolio Value: ${results['best_portfolio']:,.2f}")
+        logger.info("="*60)
     
     def _plot_results(self, env, results):
         """Plot backtest results"""
@@ -158,8 +176,9 @@ class BacktestEngine:
         )
         VolumeProfileVisualizer.plot_training_results(
             [0] * len(results['episode_returns']),
-            [10000 * (1 + r/100) for r in results['episode_returns']],
-            title=f"{results['algorithm'].upper()} Backtest - {results['symbol']}"
+            [self.initial_capital * (1 + r/100) for r in results['episode_returns']],
+            title=f"{results['algorithm'].upper()} Backtest - {results['symbol']}",
+            baseline_capital=self.initial_capital
         )
         
         import matplotlib.pyplot as plt
@@ -176,13 +195,19 @@ if __name__ == "__main__":
                        help='End date (YYYY-MM-DD)')
     parser.add_argument('--episodes', type=int, default=50, help='Number of episodes')
     parser.add_argument('--capital', type=float, default=10000, help='Initial capital')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
+    parser.add_argument('--output-csv', type=str, default=None, help='Path to output trades CSV')
+    parser.add_argument('--output-json', type=str, default=None, help='Path to output results JSON')
     
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
     
-    engine = BacktestEngine(args.stock, initial_capital=args.capital)
+    engine = BacktestEngine(args.stock, initial_capital=args.capital, seed=args.seed)
     results = engine.run_backtest(
         start_date=args.start_date,
         end_date=args.end_date,
         algorithm=args.algorithm,
-        episodes=args.episodes
+        episodes=args.episodes,
+        output_csv=args.output_csv,
+        output_json=args.output_json
     )
