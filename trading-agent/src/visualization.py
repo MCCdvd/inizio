@@ -41,18 +41,30 @@ class VolumeProfileVisualizer:
         ax1.legend()
         ax1.grid(True, alpha=0.3)
         
-        # Volume profile histogram
-        min_price = np.min(prices)
-        max_price = np.max(prices)
-        bins = np.linspace(min_price, max_price, 50)
-        bin_indices = np.digitize(prices, bins)
-        
-        profile = np.zeros(len(bins))
-        for i, vol in enumerate(volumes):
-            if 0 <= bin_indices[i] < len(bins):
-                profile[bin_indices[i]] += vol
-        
-        ax2.barh(bins, profile, height=(max_price - min_price) / len(bins), alpha=0.7, color='steelblue')
+        # Volume profile histogram (vectorized aggregation)
+        if len(prices) == 0 or len(volumes) == 0:
+            min_price = 0.0
+            max_price = 1.0
+            centers = np.array([])
+            profile = np.array([])
+        else:
+            min_price = np.min(prices)
+            max_price = np.max(prices)
+            # Create edges for 50 bins (bins+1 edges)
+            edges = np.linspace(min_price, max_price, 51)
+            centers = (edges[:-1] + edges[1:]) / 2
+            # bin indices 0..len(centers)-1
+            bin_indices = np.digitize(prices, edges) - 1
+            bin_indices_clamped = np.clip(bin_indices, 0, len(centers) - 1).astype(int)
+            # vectorized aggregation using bincount
+            profile = np.bincount(bin_indices_clamped, weights=volumes, minlength=len(centers))[:len(centers)]
+
+        if centers.size > 0 and profile.size > 0:
+            height = (max_price - min_price) / len(centers) if len(centers) > 0 else 0.0
+            ax2.barh(centers, profile, height=height, alpha=0.7, color='steelblue')
+        else:
+            ax2.text(0.5, 0.5, 'No data', horizontalalignment='center', verticalalignment='center')
+
         ax2.axhline(y=poc, color='blue', linestyle='--', label='POC', linewidth=2)
         ax2.axhline(y=vah, color='green', linestyle='--', label='VAH', linewidth=2)
         ax2.axhline(y=val, color='red', linestyle='--', label='VAL', linewidth=2)
