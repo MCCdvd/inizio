@@ -1,11 +1,14 @@
 """
 Multi-stock portfolio trading with RL
 """
+import logging
 import numpy as np
 from typing import List, Dict
 from datetime import datetime, timedelta
 from trading_agent import TradingEnvironmentWithVolumeProfile
 from agents import DQNAgent, PPOAgent, A3CAgent
+
+logger = logging.getLogger(__name__)
 
 
 class PortfolioAgent:
@@ -45,13 +48,13 @@ class PortfolioAgent:
     
     def train(self, episodes: int = 50, algorithm: str = 'dqn'):
         """Train agents on all stocks"""
-        print(f"\nTraining portfolio on {len(self.stocks)} stocks")
-        print(f"Algorithm: {algorithm.upper()}, Episodes: {episodes}\n")
+        logger.info("Training portfolio on %d stocks", len(self.stocks))
+        logger.info("Algorithm: %s, Episodes: %s", algorithm.upper(), episodes)
         
         self.initialize(algorithm)
         
         for stock in self.stocks:
-            print(f"Training {stock}...")
+            logger.info("Training %s...", stock)
             env = self.environments[stock]
             agent = self.agents[stock]
             
@@ -89,7 +92,7 @@ class PortfolioAgent:
                 if (episode + 1) % 10 == 0:
                     portfolio_value = env.balance + (env.shares_held * env.prices[env.current_step - 1])
                     ret = ((portfolio_value - self.capital_per_stock) / self.capital_per_stock) * 100
-                    print(f"  {stock} Episode {episode+1}: ${portfolio_value:,.2f} ({ret:+.2f}%)")
+                    logger.info("  %s Episode %d: $%0.2f (%+0.2f%%)", stock, episode+1, portfolio_value, ret)
             
             # Store results
             portfolio_value = env.balance + (env.shares_held * env.prices[env.current_step - 1])
@@ -103,22 +106,22 @@ class PortfolioAgent:
     
     def _print_portfolio_summary(self):
         """Print portfolio summary"""
-        print(f"\n{'='*60}")
-        print(f"PORTFOLIO SUMMARY")
-        print(f"{'='*60}\n")
+        logger.info('%s', '=' * 60)
+        logger.info('PORTFOLIO SUMMARY')
+        logger.info('%s', '=' * 60)
         
         total_portfolio = sum(r['final_portfolio'] for r in self.results.values())
         total_return = ((total_portfolio - self.initial_capital) / self.initial_capital) * 100
         
-        print(f"Total Capital: ${self.initial_capital:,.2f}")
-        print(f"Final Portfolio: ${total_portfolio:,.2f}")
-        print(f"Total Return: {total_return:+.2f}%\n")
+        logger.info('Total Capital: $%0.2f', self.initial_capital)
+        logger.info('Final Portfolio: $%0.2f', total_portfolio)
+        logger.info('Total Return: %+0.2f%%', total_return)
         
         for stock in self.stocks:
             result = self.results[stock]
-            print(f"{stock}:")
-            print(f"  Portfolio: ${result['final_portfolio']:,.2f}")
-            print(f"  Return: {result['return_pct']:+.2f}%")
-            print(f"  Trades: {len(result['trades'])}")
+            logger.info('%s:', stock)
+            logger.info('  Portfolio: $%0.2f', result['final_portfolio'])
+            logger.info('  Return: %+0.2f%%', result['return_pct'])
+            logger.info('  Trades: %d', len(result['trades']))
         
-        print(f"\n{'='*60}\n")
+        logger.info('%s', '=' * 60)
