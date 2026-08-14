@@ -1,5 +1,11 @@
+import logging
 import sys
 import os
+
+from trading_agent.src.logging_config import configure_logging, get_logger
+
+configure_logging()
+logger = get_logger(__name__)
 
 # Enable GPU memory growth to avoid OOM errors
 try:
@@ -8,12 +14,12 @@ try:
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
     if gpus:
-        print(f"GPU(s) detected: {len(gpus)}")
-        print(f"GPU device: {gpus[0].name}")
+        logger.info("GPU(s) detected: %d", len(gpus))
+        logger.info("GPU device: %s", gpus[0].name)
     else:
-        print("No GPU detected. Using CPU.")
+        logger.info("No GPU detected. Using CPU.")
 except Exception as e:
-    print(f"GPU setup warning: {e}")
+    logger.warning("GPU setup warning: %s", e)
 
 # Add the one directory to Python path so modules can be found
 sys.path.insert(0, os.path.dirname(__file__))
@@ -32,11 +38,16 @@ with open(config_path, 'r') as f:
 
 # Fetch data from Yahoo Finance
 ticker = "AAPL"  # Change this to any stock ticker
-print(f"Fetching data for {ticker} from Yahoo Finance...")
-df = yf.download(ticker, start="2020-01-01", end="2023-12-31", progress=False)
+logger.info("Fetching data for %s from Yahoo Finance...", ticker)
+try:
+    df = yf.download(ticker, start="2020-01-01", end="2023-12-31", progress=False)
+except Exception as e:
+    logger.error("Failed to download data: %s", e)
+    raise
 
 # Reset index to make Date a column
-df = df.reset_index()
+if 'Date' in df.columns:
+    df = df.reset_index()
 
 # Flatten multi-level columns if needed and rename properly
 if isinstance(df.columns[0], tuple):
@@ -46,16 +57,19 @@ else:
     df.columns = [str(col).lower() for col in df.columns]
 
 # Clean up column names - remove ticker suffix
-df.columns = [col.replace(f'_{ticker.lower()}', '') for col in df.columns]
+try:
+    df.columns = [col.replace(f'_{ticker.lower()}', '') for col in df.columns]
+except Exception:
+    pass
 
-print(f"Data shape: {df.shape}")
-print(f"Data columns: {df.columns.tolist()}")
+logger.info("Data shape: %s", df.shape)
+logger.debug("Data columns: %s", df.columns.tolist())
 
 # Rename 'index' to 'date' if it exists
 if 'index' in df.columns:
     df = df.rename(columns={'index': 'date'})
 
-print(f"Data date range: {df['date'].min()} to {df['date'].max()}")
+logger.info("Data date range: %s to %s", df['date'].min(), df['date'].max())
 
 # Select only OHLCV columns
 df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
@@ -74,7 +88,7 @@ episodes = config['episodes']
 batch_size = config['batch_size']
 rewards_history = []
 
-print(f"\nStarting training for {episodes} episodes...")
+logger.info("Starting training for %s episodes...", episodes)
 for episode in range(episodes):
     state = env.reset()
     total_reward = 0
@@ -89,7 +103,7 @@ for episode in range(episodes):
         actions_this_ep.append(action)
         
         if done:
-            print(f"Episode {episode+1}/{episodes}, Total Reward: {total_reward:.2f}, Epsilon: {agent.epsilon:.3f}")
+            logger.info("Episode %d/%d, Total Reward: %.2f, Epsilon: %.3f", episode+1, episodes, total_reward, agent.epsilon)
             break
         
         if len(agent.memory) > batch_size:
@@ -102,8 +116,8 @@ for episode in range(episodes):
 try:
     from utils.plot import plot_rewards
     plot_rewards(rewards_history)
-    print("Rewards plot displayed!")
+    logger.info("Rewards plot displayed!")
 except Exception as e:
-    print(f"Plotting not available: {str(e)}")
+    logger.debug("Plotting not available: %s", e)
 
-print("Training completed!")
+logger.info("Training completed!")
