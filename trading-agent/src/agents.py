@@ -426,3 +426,124 @@ class A3CAgent(BaseAgent):
         self.episode_states.clear()
         self.episode_actions.clear()
         self.episode_rewards.clear()
+
+
+# Simple random policy agent used as a fallback or for quick experiments
+class RandomPolicyAgent(BaseAgent):
+    def __init__(self, state_size: int = 6, action_size: int = 3, seed: Optional[int] = None):
+        super().__init__(state_size, action_size, seed=seed)
+
+    def act(self, state: np.ndarray) -> int:
+        return random.randrange(self.action_size)
+
+    def train(self, *args, **kwargs):
+        # No training for random policy
+        return
+
+
+def _check_backend_available(backend: str) -> bool:
+    if backend == 'torch':
+        try:
+            import importlib
+            importlib.import_module('torch')
+            return True
+        except Exception:
+            return False
+    if backend == 'tf' or backend == 'tensorflow':
+        try:
+            import importlib
+            importlib.import_module('tensorflow')
+            return True
+        except Exception:
+            return False
+    if backend == 'random':
+        return True
+    if backend == 'auto':
+        # auto is always acceptable; selection happens in factory
+        return True
+    return False
+
+
+def get_agent(algorithm: str, backend: str = 'auto', **kwargs):
+    """Factory to construct agents with explicit backend selection.
+
+    algorithm: 'dqn'|'ppo'|'a3c'
+    backend: 'auto'|'torch'|'tf'|'random'
+    kwargs: passed to agent constructor
+    """
+    alg = algorithm.lower()
+    be = backend.lower()
+
+    # Validate requested backend availability
+    if be not in ('auto', 'torch', 'tf', 'random'):
+        raise ValueError(f"Unknown backend: {backend}")
+
+    if be != 'auto' and not _check_backend_available(be):
+        raise RuntimeError(f"Requested backend '{backend}' is not available in the environment")
+
+    # Decision order: if backend forced to 'random' -> RandomPolicyAgent
+    if be == 'random':
+        if alg == 'dqn':
+            return RandomPolicyAgent(**kwargs)
+        elif alg == 'ppo':
+            return RandomPolicyAgent(**kwargs)
+        elif alg == 'a3c':
+            return RandomPolicyAgent(**kwargs)
+
+    # If backend forced to 'torch' or 'tf', attempt to construct the matching implementation
+    if be == 'torch':
+        if alg == 'dqn':
+            if _check_backend_available('torch'):
+                return DQNAgent(**kwargs)
+            else:
+                raise RuntimeError("PyTorch requested but not available")
+        if alg == 'ppo':
+            if _check_backend_available('torch'):
+                return PPOAgent(**kwargs)
+            else:
+                raise RuntimeError("PyTorch requested but not available")
+        if alg == 'a3c':
+            if _check_backend_available('torch'):
+                return A3CAgent(**kwargs)
+            else:
+                raise RuntimeError("PyTorch requested but not available")
+
+    if be == 'tf':
+        if alg == 'dqn':
+            if _check_backend_available('tf'):
+                return DQNAgent(**kwargs)
+            else:
+                raise RuntimeError("TensorFlow requested but not available")
+        if alg == 'ppo':
+            # PPO TF implementation not provided; fall back to RandomPolicyAgent if TF only
+            if _check_backend_available('tf'):
+                return PPOAgent(**kwargs)
+            else:
+                raise RuntimeError("TensorFlow requested but not available")
+        if alg == 'a3c':
+            if _check_backend_available('tf'):
+                return A3CAgent(**kwargs)
+            else:
+                raise RuntimeError("TensorFlow requested but not available")
+
+    # Auto-selection: prefer PyTorch if available, then TF, otherwise Random
+    if be == 'auto':
+        if _check_backend_available('torch') and _HAS_TORCH:
+            if alg == 'dqn':
+                return DQNAgent(**kwargs)
+            if alg == 'ppo':
+                return PPOAgent(**kwargs)
+            if alg == 'a3c':
+                return A3CAgent(**kwargs)
+        if _check_backend_available('tf') and _HAS_TF:
+            if alg == 'dqn':
+                return DQNAgent(**kwargs)
+            if alg == 'ppo':
+                return PPOAgent(**kwargs)
+            if alg == 'a3c':
+                return A3CAgent(**kwargs)
+        # Fallback
+        return RandomPolicyAgent(**kwargs)
+
+    # Should not reach here
+    raise RuntimeError("Unable to construct agent for given algorithm/backend")
