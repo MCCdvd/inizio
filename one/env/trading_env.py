@@ -82,7 +82,6 @@ class TradingEnv:
 
         price = self._current_price()
         portfolio_value = self._portfolio_value(price)
-        self.peak_portfolio_value = max(self.peak_portfolio_value, portfolio_value)
         drawdown = (self.peak_portfolio_value - portfolio_value) / max(self.peak_portfolio_value, 1e-8)
 
         cash_ratio = self.balance / max(portfolio_value, 1e-8)

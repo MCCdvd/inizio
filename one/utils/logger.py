@@ -16,7 +16,9 @@ def setup_logger(name='one', level='INFO', log_file=None):
     logger.addHandler(stream_handler)
 
     if log_file:
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        dirname = os.path.dirname(log_file)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)

@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -72,6 +73,22 @@ def _build_agent(agent_name, state_size, action_size, config):
     return DQNAgent(state_size=state_size, action_size=action_size, config=config.get('dqn', {}))
 
 
+def _to_discrete_action(action):
+    if isinstance(action, (list, tuple, pd.Series, np.ndarray)):
+        arr = np.array(action, dtype=np.float32).flatten()
+        if arr.size == 0:
+            return 0
+        if arr.size == 1:
+            scalar = float(arr[0])
+            if scalar < -0.33:
+                return 0
+            if scalar > 0.33:
+                return 2
+            return 1
+        return int(np.argmax(arr))
+    return int(action)
+
+
 def _train_dqn(agent, env, episodes, batch_size, checkpoint_interval, logger):
     rewards_history = []
     metrics_history = []
@@ -127,11 +144,12 @@ def _train_ppo(agent, env, episodes, logger):
 
         while not done:
             action, value, log_prob = agent.act(state)
-            next_state, reward, done, info = env.step(int(action) if not isinstance(action, (list, tuple, pd.Series)) else action)
+            discrete_action = _to_discrete_action(action)
+            next_state, reward, done, info = env.step(discrete_action)
             agent.store_transition(state, action, reward, done, value, log_prob)
             state = next_state
             total_reward += reward
-            action_history.append(int(action) if not isinstance(action, (list, tuple, pd.Series)) else 0)
+            action_history.append(discrete_action)
 
         agent.learn()
 
@@ -205,7 +223,9 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
 
     output_cfg = config.get('output', {})
     metrics_path = output_cfg.get('metrics_csv', f'one/{agent_name}_metrics.csv')
-    os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
+    metrics_dir = os.path.dirname(metrics_path)
+    if metrics_dir:
+        os.makedirs(metrics_dir, exist_ok=True)
     save_metrics_csv(metrics_history, metrics_path)
     logger.info('Saved training metrics to %s', metrics_path)
 

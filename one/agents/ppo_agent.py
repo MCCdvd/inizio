@@ -195,7 +195,9 @@ class PPOAgent(BaseAgent):
     def save(self, path):
         if not self.use_tf:
             return
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        dirname = os.path.dirname(path)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
         self.actor.save(path + '_actor.keras')
         self.critic.save(path + '_critic.keras')
         if self.continuous_actions:

@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -50,6 +51,23 @@ def _init_agent(agent_name, env, config):
     return DQNAgent(state_size=env.state_size, action_size=3, config=config.get('dqn', {}))
 
 
+def _to_discrete_action(action):
+    if not isinstance(action, (list, tuple, pd.Series, np.ndarray)):
+        return int(action)
+
+    arr = np.array(action, dtype=np.float32).flatten()
+    if arr.size == 0:
+        return 0
+    if arr.size == 1:
+        scalar = float(arr[0])
+        if scalar < -0.33:
+            return 0
+        if scalar > 0.33:
+            return 2
+        return 1
+    return int(arr.argmax())
+
+
 def run_backtest(agent_name, ticker, config, model_path=None):
     logger = setup_logger(
         name=f'one.backtest.{agent_name}',
@@ -91,7 +109,7 @@ def run_backtest(agent_name, ticker, config, model_path=None):
     while not done:
         if agent_name == 'ppo':
             action, _, _ = agent.act(state)
-            action = int(action)
+            action = _to_discrete_action(action)
         else:
             action = agent.act(state)
         next_state, reward, done, _ = env.step(action)
@@ -130,7 +148,9 @@ def compare_agents(agent_names, ticker, config):
 
     df = pd.DataFrame(results)
     report_path = config.get('backtest', {}).get('report_csv', 'one/backtest_report.csv')
-    os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    report_dir = os.path.dirname(report_path)
+    if report_dir:
+        os.makedirs(report_dir, exist_ok=True)
     df.to_csv(report_path, index=False)
 
     return df
