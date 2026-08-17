@@ -31,7 +31,7 @@ def add_indicators(df, indicators=None, volume_profile_lookback=30):
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss.replace(0, np.nan)
+        rs = gain / (loss + 1e-8)
         df['rsi'] = 100 - (100 / (1 + rs))
 
     if include_all or 'macd' in indicators:
