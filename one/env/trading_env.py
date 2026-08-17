@@ -20,6 +20,9 @@ class TradingEnv:
         overtrade_penalty=0.001,
         stop_loss_pct=0.05,
         take_profit_pct=0.1,
+        loss_penalty_weight=0.1,
+        min_profit_bonus_pct=0.002,
+        weak_profit_penalty=0.0005,
     ):
         self.df = df.reset_index(drop=True).copy()
         self.initial_balance = float(initial_balance)
@@ -34,6 +37,9 @@ class TradingEnv:
         self.overtrade_penalty = max(float(overtrade_penalty), 0.0)
         self.stop_loss_pct = max(float(stop_loss_pct), 0.0)
         self.take_profit_pct = max(float(take_profit_pct), 0.0)
+        self.loss_penalty_weight = max(float(loss_penalty_weight), 0.0)
+        self.min_profit_bonus_pct = max(float(min_profit_bonus_pct), 0.0)
+        self.weak_profit_penalty = max(float(weak_profit_penalty), 0.0)
 
         self._prepare_features()
         self.reset()
@@ -209,7 +215,12 @@ class TradingEnv:
                         'profit_pct': float(profit_pct),
                     }
                 )
-                reward += self.trade_bonus * profit_pct
+                if profit_pct > self.min_profit_bonus_pct:
+                    reward += self.trade_bonus * profit_pct
+                elif profit_pct >= 0:
+                    reward -= self.weak_profit_penalty
+                else:
+                    reward -= self.loss_penalty_weight * abs(profit_pct)
                 reward -= fee / max(self.initial_balance, 1e-8)
                 reward -= self.overtrade_penalty
                 self.holding_steps = 0
@@ -240,7 +251,12 @@ class TradingEnv:
                 )
                 self.shares_held = 0.0
                 self.holding_steps = 0
-                reward += self.trade_bonus * profit_pct
+                if profit_pct > self.min_profit_bonus_pct:
+                    reward += self.trade_bonus * profit_pct
+                elif profit_pct >= 0:
+                    reward -= self.weak_profit_penalty
+                else:
+                    reward -= self.loss_penalty_weight * abs(profit_pct)
                 reward -= fee / max(self.initial_balance, 1e-8)
 
         self.current_step += 1

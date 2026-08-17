@@ -71,8 +71,8 @@ class DQNAgent(BaseAgent):
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, int(action), float(reward), next_state, bool(done)))
 
-    def act(self, state):
-        if np.random.random() <= self.epsilon:
+    def act(self, state, explore=True):
+        if explore and np.random.random() <= self.epsilon:
             return random.randrange(self.action_size)
 
         if self.use_tf:

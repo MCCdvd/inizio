@@ -146,12 +146,23 @@ def _build_agent(agent_name, state_size, action_size, config):
 
 def _objective_score(metrics, objective_cfg):
     metric = str(objective_cfg.get('primary_metric', 'sharpe_ratio'))
+    if metric == 'win_rate_drawdown':
+        win_rate = float(metrics.get('win_rate', 0.0))
+        drawdown = float(metrics.get('max_drawdown_pct', 0.0))
+        trade_count = float(metrics.get('trade_count', 0.0))
+        drawdown_weight = float(objective_cfg.get('drawdown_weight', 0.02))
+        min_trades = int(objective_cfg.get('min_trades', 5))
+        low_trade_penalty = float(objective_cfg.get('low_trade_penalty', 0.05))
+        score = win_rate - drawdown_weight * drawdown
+        if trade_count < min_trades:
+            score -= low_trade_penalty * float(min_trades - trade_count)
+        return score
     if metric == 'max_drawdown_pct':
         return -float(metrics.get('max_drawdown_pct', 0.0))
     return float(metrics.get(metric, 0.0))
 
 
-def _run_episode(agent_name, agent, env, batch_size):
+def _run_episode(agent_name, agent, env, batch_size, action_threshold):
     state = env.reset()
     done = False
     total_reward = 0.0
@@ -161,7 +172,7 @@ def _run_episode(agent_name, agent, env, batch_size):
     while not done:
         if agent_name == 'ppo':
             action, value, log_prob = agent.act(state)
-            discrete_action = to_discrete_action(action)
+            discrete_action = to_discrete_action(action, threshold=action_threshold)
             next_state, reward, done, info = env.step(discrete_action)
             agent.store_transition(state, action, reward, done, value, log_prob)
             actions.append(discrete_action)
@@ -187,6 +198,7 @@ def _train_agent(agent_name, env, config, logger):
     checkpoint_interval = int(training_cfg.get('checkpoint_interval', 10))
     patience = int(training_cfg.get('early_stopping_patience', 0))
     min_delta = float(training_cfg.get('early_stopping_min_delta', 0.0))
+    action_threshold = float(config.get('policy', {}).get('action_threshold', 0.33))
 
     agent = _build_agent(agent_name, env.state_size, 3, config)
     rewards_history = []
@@ -196,7 +208,13 @@ def _train_agent(agent_name, env, config, logger):
     stagnant = 0
 
     for episode in range(1, episodes + 1):
-        total_reward, episode_metrics, actions = _run_episode(agent_name, agent, env, batch_size=batch_size)
+        total_reward, episode_metrics, actions = _run_episode(
+            agent_name,
+            agent,
+            env,
+            batch_size=batch_size,
+            action_threshold=action_threshold,
+        )
         action_history.extend(actions)
         episode_metrics.update(
             {
@@ -278,6 +296,25 @@ def _save_retrain_status(output_cfg, score, threshold):
     return status
 
 
+def _set_nested_config_value(cfg, dotted_key, value):
+    parts = str(dotted_key).split('.')
+    node = cfg
+    for part in parts[:-1]:
+        if part not in node or not isinstance(node[part], dict):
+            node[part] = {}
+        node = node[part]
+    node[parts[-1]] = value
+
+
+def _aggregate_walk_forward_metrics(wf_df):
+    if wf_df is None or wf_df.empty:
+        return {}
+    numeric_cols = [c for c in ['win_rate', 'sharpe_ratio', 'max_drawdown_pct', 'trade_count', 'total_return_pct'] if c in wf_df.columns]
+    if not numeric_cols:
+        return {}
+    return {col: float(wf_df[col].mean()) for col in numeric_cols}
+
+
 def _iter_search_configs(base_config, agent_name):
     search_cfg = base_config.get('search', {})
     grid = search_cfg.get('grid', {}).get(agent_name, {})
@@ -292,7 +329,10 @@ def _iter_search_configs(base_config, agent_name):
             break
         cfg = json.loads(json.dumps(base_config))
         for key, value in zip(keys, combo):
-            cfg[agent_name][key] = value
+            if '.' in str(key):
+                _set_nested_config_value(cfg, key, value)
+            else:
+                cfg[agent_name][key] = value
         yield cfg
 
 
@@ -307,7 +347,6 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
 
     training_cfg = config.get('training', {})
     data_cfg = config.get('data', {})
-    env_cfg = config.get('env', {})
     output_cfg = config.get('output', {})
     objective_cfg = config.get('objective', {})
     feature_cfg = config.get('features', {})
@@ -316,37 +355,74 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
 
     _set_seed(seed)
     raw_df = _download_data(ticker=ticker, start_date=data_cfg.get('start', '2020-01-01'), end_date=data_cfg.get('end', '2023-12-31'), logger=logger)
-    df = _prepare_data(raw_df, data_cfg=data_cfg, feature_cfg=feature_cfg)
-    train_df, test_df = _split_df(df, data_cfg.get('split_ratio', 0.8))
-    logger.info('Prepared dataset rows=%d train=%d test=%d regime=%s', len(df), len(train_df), len(test_df), _infer_market_regime(test_df))
-
-    env_kwargs = {
-        'initial_balance': env_cfg.get('initial_balance', config.get('initial_balance', 10000)),
-        'window_size': env_cfg.get('window_size', 30),
-        'drawdown_penalty': env_cfg.get('drawdown_penalty', 0.1),
-        'trade_bonus': env_cfg.get('trade_bonus', 0.05),
-        'hold_penalty': env_cfg.get('hold_penalty', 0.001),
-        'risk_reward_weight': env_cfg.get('risk_reward_weight', 0.05),
-        'max_hold_steps': env_cfg.get('max_hold_steps', 20),
-        'commission_pct': env_cfg.get('commission_pct', 0.001),
-        'slippage_pct': env_cfg.get('slippage_pct', 0.0005),
-        'overtrade_penalty': env_cfg.get('overtrade_penalty', 0.001),
-        'stop_loss_pct': env_cfg.get('stop_loss_pct', 0.05),
-        'take_profit_pct': env_cfg.get('take_profit_pct', 0.1),
-    }
 
     best = None
     for trial, trial_cfg in enumerate(_iter_search_configs(config, agent_name), start=1):
         _set_seed(seed)
-        env = TradingEnv(train_df, **env_kwargs)
+        trial_data_cfg = trial_cfg.get('data', data_cfg)
+        trial_feature_cfg = trial_cfg.get('features', feature_cfg)
+        trial_df = _prepare_data(raw_df, data_cfg=trial_data_cfg, feature_cfg=trial_feature_cfg)
+        trial_train_df, trial_test_df = _split_df(trial_df, trial_data_cfg.get('split_ratio', 0.8))
+        logger.info(
+            'Trial %d dataset rows=%d train=%d test=%d regime=%s',
+            trial,
+            len(trial_df),
+            len(trial_train_df),
+            len(trial_test_df),
+            _infer_market_regime(trial_test_df),
+        )
+        trial_env_cfg = trial_cfg.get('env', {})
+        trial_env_kwargs = {
+            'initial_balance': trial_env_cfg.get('initial_balance', trial_cfg.get('initial_balance', 10000)),
+            'window_size': trial_env_cfg.get('window_size', 30),
+            'drawdown_penalty': trial_env_cfg.get('drawdown_penalty', 0.1),
+            'trade_bonus': trial_env_cfg.get('trade_bonus', 0.05),
+            'hold_penalty': trial_env_cfg.get('hold_penalty', 0.001),
+            'risk_reward_weight': trial_env_cfg.get('risk_reward_weight', 0.05),
+            'max_hold_steps': trial_env_cfg.get('max_hold_steps', 20),
+            'commission_pct': trial_env_cfg.get('commission_pct', 0.001),
+            'slippage_pct': trial_env_cfg.get('slippage_pct', 0.0005),
+            'overtrade_penalty': trial_env_cfg.get('overtrade_penalty', 0.001),
+            'stop_loss_pct': trial_env_cfg.get('stop_loss_pct', 0.05),
+            'take_profit_pct': trial_env_cfg.get('take_profit_pct', 0.1),
+            'loss_penalty_weight': trial_env_cfg.get('loss_penalty_weight', 0.1),
+            'min_profit_bonus_pct': trial_env_cfg.get('min_profit_bonus_pct', 0.002),
+            'weak_profit_penalty': trial_env_cfg.get('weak_profit_penalty', 0.0005),
+        }
+        env = TradingEnv(trial_train_df, **trial_env_kwargs)
         train_result = _train_agent(agent_name=agent_name, env=env, config=trial_cfg, logger=logger)
-        trial_metrics = train_result['metrics'][-1] if train_result['metrics'] else {}
-        score = _objective_score(trial_metrics, objective_cfg=objective_cfg)
+        trial_objective_cfg = trial_cfg.get('objective', objective_cfg)
+        trial_model_path = trial_cfg.get('backtest', {}).get('models', {}).get(agent_name)
+        trial_backtest_metrics, _ = run_backtest(
+            agent_name=agent_name,
+            ticker=ticker,
+            config=trial_cfg,
+            model_path=trial_model_path,
+            prepared_df=trial_df,
+        )
+        trial_wf_df = run_walk_forward_validation(
+            agent_name=agent_name,
+            ticker=ticker,
+            config=trial_cfg,
+            prepared_df=trial_df,
+            model_path=trial_model_path,
+        )
+        trial_oos_metrics = _aggregate_walk_forward_metrics(trial_wf_df) or trial_backtest_metrics
+        score = _objective_score(trial_oos_metrics, objective_cfg=trial_objective_cfg)
         if best is None or score > best['score']:
-            best = {'trial': trial, 'score': score, 'result': train_result, 'config': trial_cfg}
-        logger.info('Trial %d completed with objective score %.5f', trial, score)
+            best = {
+                'trial': trial,
+                'score': score,
+                'result': train_result,
+                'config': trial_cfg,
+                'oos_metrics': trial_oos_metrics,
+                'prepared_df': trial_df,
+            }
+        logger.info('Trial %d completed with OOS objective score %.5f', trial, score)
 
     train_result = best['result']
+    df = best['prepared_df']
+    best_objective_cfg = best['config'].get('objective', objective_cfg)
     metrics_history = train_result['metrics']
     rewards_history = train_result['rewards']
     actions = train_result['actions']
@@ -360,19 +436,19 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
 
     model_path = None
     if agent_name == 'dqn':
-        model_path = config.get('backtest', {}).get('models', {}).get('dqn', 'one/models/dqn/best_model.keras')
+        model_path = best['config'].get('backtest', {}).get('models', {}).get('dqn', 'one/models/dqn/best_model.keras')
     elif agent_name == 'ppo':
-        model_path = config.get('backtest', {}).get('models', {}).get('ppo', 'one/models/ppo/best_model')
+        model_path = best['config'].get('backtest', {}).get('models', {}).get('ppo', 'one/models/ppo/best_model')
 
     backtest_metrics, _ = run_backtest(
         agent_name=agent_name,
         ticker=ticker,
-        config=config,
+        config=best['config'],
         model_path=model_path,
         prepared_df=df,
     )
-    wf_df = run_walk_forward_validation(agent_name=agent_name, ticker=ticker, config=config, prepared_df=df, model_path=model_path)
-    objective_score = _objective_score(backtest_metrics, objective_cfg=objective_cfg)
+    wf_df = run_walk_forward_validation(agent_name=agent_name, ticker=ticker, config=best['config'], prepared_df=df, model_path=model_path)
+    objective_score = _objective_score(backtest_metrics, objective_cfg=best_objective_cfg)
 
     latest_train = metrics_history[-1] if metrics_history else {}
     leaderboard_row = {
@@ -380,14 +456,17 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
         'ticker': ticker,
         'agent': agent_name,
         'seed': seed,
-        'primary_metric': objective_cfg.get('primary_metric', 'sharpe_ratio'),
+        'primary_metric': best_objective_cfg.get('primary_metric', 'sharpe_ratio'),
         'objective_score': objective_score,
         'train_sharpe': latest_train.get('sharpe_ratio', 0.0),
         'train_drawdown_pct': latest_train.get('max_drawdown_pct', 0.0),
+        'train_win_rate': latest_train.get('win_rate', 0.0),
         'test_sharpe': backtest_metrics.get('sharpe_ratio', 0.0),
         'test_drawdown_pct': backtest_metrics.get('max_drawdown_pct', 0.0),
+        'test_win_rate': backtest_metrics.get('win_rate', 0.0),
         'test_return_pct': backtest_metrics.get('total_return_pct', 0.0),
         'walk_forward_avg_sharpe': float(wf_df['sharpe_ratio'].mean()) if not wf_df.empty else 0.0,
+        'walk_forward_avg_win_rate': float(wf_df['win_rate'].mean()) if not wf_df.empty and 'win_rate' in wf_df else 0.0,
     }
     _update_leaderboard(output_cfg, leaderboard_row)
 
@@ -406,7 +485,8 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
             if metrics_history:
                 plot_training_metrics(pd.DataFrame(metrics_history).to_dict(orient='list'))
             plot_action_distribution(actions)
-            plot_equity_curve([m.get('final_portfolio_value', env_kwargs['initial_balance']) for m in metrics_history], title=f'{agent_name.upper()} Episode Equity')
+            best_initial_balance = best['config'].get('env', {}).get('initial_balance', best['config'].get('initial_balance', 10000))
+            plot_equity_curve([m.get('final_portfolio_value', best_initial_balance) for m in metrics_history], title=f'{agent_name.upper()} Episode Equity')
         except Exception as exc:
             logger.warning('Plotting skipped: %s', exc)
 

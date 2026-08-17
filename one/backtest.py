@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -66,6 +67,17 @@ def _prepare_data(raw_df, config):
         df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].ffill().bfill()
         df['volume'] = df['volume'].fillna(0.0)
 
+    z_threshold = float(data_cfg.get('outlier_zscore_threshold', 0.0) or 0.0)
+    if z_threshold > 0:
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            s = df[col]
+            std = float(s.std())
+            if std > 0:
+                z = (s - s.mean()) / std
+                df[col] = s.where(z.abs() <= z_threshold, np.nan)
+        df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].ffill().bfill()
+        df['volume'] = df['volume'].fillna(df['volume'].median())
+
     indicators = feature_cfg.get('indicators', ['all'])
     lookback = int(feature_cfg.get('volume_profile_lookback', 30))
     return add_indicators(df, indicators=indicators, volume_profile_lookback=lookback).dropna().reset_index(drop=True)
@@ -95,6 +107,9 @@ def _build_env(df, config):
         overtrade_penalty=env_cfg.get('overtrade_penalty', 0.001),
         stop_loss_pct=env_cfg.get('stop_loss_pct', 0.05),
         take_profit_pct=env_cfg.get('take_profit_pct', 0.1),
+        loss_penalty_weight=env_cfg.get('loss_penalty_weight', 0.1),
+        min_profit_bonus_pct=env_cfg.get('min_profit_bonus_pct', 0.002),
+        weak_profit_penalty=env_cfg.get('weak_profit_penalty', 0.0005),
     )
 
 
@@ -129,6 +144,7 @@ def run_backtest(agent_name, ticker, config, model_path=None, prepared_df=None):
     test_df = df.iloc[split_idx:].reset_index(drop=True)
     env = _build_env(test_df, config)
     agent = _init_agent(agent_name, env, config)
+    action_threshold = float(config.get('policy', {}).get('action_threshold', 0.33))
 
     if model_path:
         try:
@@ -143,9 +159,9 @@ def run_backtest(agent_name, ticker, config, model_path=None, prepared_df=None):
     while not done:
         if agent_name == 'ppo':
             action, _, _ = agent.act(state)
-            action = to_discrete_action(action)
+            action = to_discrete_action(action, threshold=action_threshold)
         else:
-            action = agent.act(state)
+            action = agent.act(state, explore=False)
         next_state, reward, done, _ = env.step(action)
         state = next_state
         total_reward += reward
@@ -211,6 +227,7 @@ def run_walk_forward_validation(agent_name, ticker, config, prepared_df=None, mo
             continue
         env = _build_env(test_slice, config)
         agent = _init_agent(agent_name, env, config)
+        action_threshold = float(config.get('policy', {}).get('action_threshold', 0.33))
         if model_path:
             try:
                 agent.load(model_path)
@@ -222,9 +239,9 @@ def run_walk_forward_validation(agent_name, ticker, config, prepared_df=None, mo
         while not done:
             if agent_name == 'ppo':
                 action, _, _ = agent.act(state)
-                action = to_discrete_action(action)
+                action = to_discrete_action(action, threshold=action_threshold)
             else:
-                action = agent.act(state)
+                action = agent.act(state, explore=False)
             state, _, done, _ = env.step(action)
 
         m = calculate_performance_metrics(env.portfolio_history, env.trade_profits)
