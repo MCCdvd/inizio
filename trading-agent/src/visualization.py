@@ -80,7 +80,7 @@ class VolumeProfileVisualizer:
     
     @staticmethod
     def plot_training_results(episode_rewards: List[float], episode_portfolios: List[float], 
-                              title: str = "Training Results"):
+                              title: str = "Training Results", baseline_capital: float = 10000):
         """Plot training metrics"""
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
         
@@ -97,7 +97,7 @@ class VolumeProfileVisualizer:
         ax1.grid(True, alpha=0.3)
         
         # Plot returns
-        returns = [(portfolio - 10000) / 10000 * 100 for portfolio in episode_portfolios_flat]
+        returns = [(portfolio - baseline_capital) / baseline_capital * 100 for portfolio in episode_portfolios_flat]
         ax2.plot(returns, linewidth=2, color='green')
         ax2.fill_between(range(len(returns)), returns, alpha=0.3, color='green')
         ax2.axhline(y=0, color='black', linestyle='-', linewidth=1)

@@ -22,7 +22,7 @@ class BacktestEngine:
         if seed is not None:
             np.random.seed(seed)
 
-    def run_backtest(self, start_date: str, end_date: str, algorithm: str = 'dqn', episodes: int = 50, backend: str = 'auto', output_csv: str = None, output_json: str = None):
+    def run_backtest(self, start_date: str, end_date: str, algorithm: str = 'dqn', episodes: int = 50, backend: str = 'auto', output_csv: str = None, output_json: str = None, no_plot: bool = False):
         """Run backtest with specified algorithm"""
         logger.info(f"Backtesting {self.stock_symbol} from {start_date} to {end_date}")
         logger.info(f"Algorithm: {algorithm.upper()}, Episodes: {episodes}, Backend: {backend}")
@@ -129,7 +129,8 @@ class BacktestEngine:
         }
         
         self._print_results(results)
-        self._plot_results(env, results)
+        if not no_plot:
+            self._plot_results(env, results)
 
         # Export results
         if output_csv:
@@ -174,20 +175,22 @@ class BacktestEngine:
     
     def _plot_results(self, env, results):
         """Plot backtest results"""
-        VolumeProfileVisualizer.plot_volume_profile(
-            env.prices, env.volumes, env.poc, env.vah, env.val,
-            trades=results['trades'],
-            title=f"{results['algorithm'].upper()} Backtest - {results['symbol']}"
-        )
-        VolumeProfileVisualizer.plot_training_results(
-            [0] * len(results['episode_returns']),
-            [self.initial_capital * (1 + r/100) for r in results['episode_returns']],
-            title=f"{results['algorithm'].upper()} Backtest - {results['symbol']}",
-            baseline_capital=self.initial_capital
-        )
-        
-        import matplotlib.pyplot as plt
-        plt.show()
+        try:
+            VolumeProfileVisualizer.plot_volume_profile(
+                env.prices, env.volumes, env.poc, env.vah, env.val,
+                trades=results['trades'],
+                title=f"{results['algorithm'].upper()} Backtest - {results['symbol']}"
+            )
+            VolumeProfileVisualizer.plot_training_results(
+                [0] * len(results['episode_returns']),
+                [self.initial_capital * (1 + r/100) for r in results['episode_returns']],
+                title=f"{results['algorithm'].upper()} Backtest - {results['symbol']}",
+                baseline_capital=self.initial_capital
+            )
+            import matplotlib.pyplot as plt
+            plt.show()
+        except Exception as e:
+            logger.warning(f"Plotting failed (results are still valid): {e}")
 
 
 if __name__ == "__main__":
@@ -203,6 +206,7 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
     parser.add_argument('--output-csv', type=str, default=None, help='Path to output trades CSV')
     parser.add_argument('--output-json', type=str, default=None, help='Path to output results JSON')
+    parser.add_argument('--no-plot', action='store_true', help='Skip plotting charts')
     
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
@@ -214,5 +218,6 @@ if __name__ == "__main__":
         algorithm=args.algorithm,
         episodes=args.episodes,
         output_csv=args.output_csv,
-        output_json=args.output_json
+        output_json=args.output_json,
+        no_plot=args.no_plot,
     )
