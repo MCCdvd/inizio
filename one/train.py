@@ -17,6 +17,7 @@ from agents.ppo_agent import PPOAgent
 from backtest import run_backtest, run_walk_forward_validation
 from env.trading_env import TradingEnv
 from features.indicators import add_indicators
+from utils.action import to_discrete_action
 from utils.logger import setup_logger
 from utils.metrics import save_metrics_csv
 
@@ -143,22 +144,6 @@ def _build_agent(agent_name, state_size, action_size, config):
     return DQNAgent(state_size=state_size, action_size=action_size, config=config.get('dqn', {}))
 
 
-def _to_discrete_action(action):
-    if isinstance(action, (list, tuple, pd.Series, np.ndarray)):
-        arr = np.array(action, dtype=np.float32).flatten()
-        if arr.size == 0:
-            return 0
-        if arr.size == 1:
-            scalar = float(arr[0])
-            if scalar < -0.33:
-                return 0
-            if scalar > 0.33:
-                return 2
-            return 1
-        return int(np.argmax(arr))
-    return int(action)
-
-
 def _objective_score(metrics, objective_cfg):
     metric = str(objective_cfg.get('primary_metric', 'sharpe_ratio'))
     if metric == 'max_drawdown_pct':
@@ -176,7 +161,7 @@ def _run_episode(agent_name, agent, env, batch_size):
     while not done:
         if agent_name == 'ppo':
             action, value, log_prob = agent.act(state)
-            discrete_action = _to_discrete_action(action)
+            discrete_action = to_discrete_action(action)
             next_state, reward, done, info = env.step(discrete_action)
             agent.store_transition(state, action, reward, done, value, log_prob)
             actions.append(discrete_action)
@@ -259,7 +244,9 @@ def _train_agent(agent_name, env, config, logger):
 
 def _update_leaderboard(output_cfg, row):
     leaderboard_path = output_cfg.get('leaderboard_csv', 'one/leaderboard.csv')
-    os.makedirs(os.path.dirname(leaderboard_path), exist_ok=True)
+    leaderboard_dir = os.path.dirname(leaderboard_path)
+    if leaderboard_dir:
+        os.makedirs(leaderboard_dir, exist_ok=True)
     new_df = pd.DataFrame([row])
     if os.path.exists(leaderboard_path):
         existing = pd.read_csv(leaderboard_path)
@@ -270,7 +257,9 @@ def _update_leaderboard(output_cfg, row):
 
 def _save_retrain_status(output_cfg, score, threshold):
     path = output_cfg.get('retrain_status_json', 'one/retrain_status.json')
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    path_dir = os.path.dirname(path)
+    if path_dir:
+        os.makedirs(path_dir, exist_ok=True)
     status = {
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'latest_objective_score': float(score),
@@ -363,7 +352,9 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
     actions = train_result['actions']
 
     metrics_path = output_cfg.get('metrics_csv', f'one/{agent_name}_metrics.csv')
-    os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
+    metrics_dir = os.path.dirname(metrics_path)
+    if metrics_dir:
+        os.makedirs(metrics_dir, exist_ok=True)
     save_metrics_csv(metrics_history, metrics_path)
     logger.info('Saved training metrics to %s', metrics_path)
 

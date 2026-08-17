@@ -2,7 +2,6 @@ import argparse
 import os
 import sys
 
-import numpy as np
 import pandas as pd
 import yaml
 
@@ -12,6 +11,7 @@ from agents.dqn_agent import DQNAgent
 from agents.ppo_agent import PPOAgent
 from env.trading_env import TradingEnv
 from features.indicators import add_indicators
+from utils.action import to_discrete_action
 from utils.logger import setup_logger
 from utils.metrics import calculate_performance_metrics
 
@@ -79,22 +79,6 @@ def _init_agent(agent_name, env, config):
     return DQNAgent(state_size=env.state_size, action_size=3, config=config.get('dqn', {}))
 
 
-def _to_discrete_action(action):
-    if not isinstance(action, (list, tuple, pd.Series, np.ndarray)):
-        return int(action)
-    arr = np.array(action, dtype=np.float32).flatten()
-    if arr.size == 0:
-        return 0
-    if arr.size == 1:
-        scalar = float(arr[0])
-        if scalar < -0.33:
-            return 0
-        if scalar > 0.33:
-            return 2
-        return 1
-    return int(arr.argmax())
-
-
 def _build_env(df, config):
     env_cfg = config.get('env', {})
     return TradingEnv(
@@ -159,7 +143,7 @@ def run_backtest(agent_name, ticker, config, model_path=None, prepared_df=None):
     while not done:
         if agent_name == 'ppo':
             action, _, _ = agent.act(state)
-            action = _to_discrete_action(action)
+            action = to_discrete_action(action)
         else:
             action = agent.act(state)
         next_state, reward, done, _ = env.step(action)
@@ -238,7 +222,7 @@ def run_walk_forward_validation(agent_name, ticker, config, prepared_df=None, mo
         while not done:
             if agent_name == 'ppo':
                 action, _, _ = agent.act(state)
-                action = _to_discrete_action(action)
+                action = to_discrete_action(action)
             else:
                 action = agent.act(state)
             state, _, done, _ = env.step(action)
@@ -251,7 +235,9 @@ def run_walk_forward_validation(agent_name, ticker, config, prepared_df=None, mo
     wf_df = pd.DataFrame(rows)
     output_cfg = config.get('output', {})
     path = output_cfg.get('walk_forward_csv', 'one/walk_forward_report.csv')
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    path_dir = os.path.dirname(path)
+    if path_dir:
+        os.makedirs(path_dir, exist_ok=True)
     wf_df.to_csv(path, index=False)
     return wf_df
 
