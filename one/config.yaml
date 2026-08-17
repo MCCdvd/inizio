@@ -79,6 +79,7 @@ output:
   leaderboard_csv: "one/leaderboard.csv"
   walk_forward_csv: "one/walk_forward_report.csv"
   retrain_status_json: "one/retrain_status.json"
+  reports_dir: "one/reports"
 
 backtest:
   compare_agents: ["dqn", "ppo"]

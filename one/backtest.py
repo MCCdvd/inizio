@@ -258,6 +258,55 @@ def compare_agents(agent_names, ticker, config):
     return df
 
 
+def save_ticker_report(metrics, wf_df, config):
+    """Save a per-ticker CSV report with backtest metrics and walk-forward results.
+
+    The file is written to ``config.output.reports_dir/<TICKER>_<AGENT>_report.csv``.
+    Returns the path of the saved file.
+    """
+    output_cfg = config.get('output', {})
+    reports_dir = output_cfg.get('reports_dir', 'one/reports')
+    os.makedirs(reports_dir, exist_ok=True)
+
+    ticker = metrics.get('ticker', 'UNKNOWN')
+    agent = metrics.get('agent', 'agent')
+    # Sanitise ticker for use as a filename (e.g. BAS.DE -> BAS_DE)
+    safe_ticker = ticker.replace('.', '_').replace('/', '_')
+
+    # ---- backtest summary rows ----
+    summary_rows = [{'section': 'backtest', **metrics}]
+
+    # ---- walk-forward rows ----
+    if wf_df is not None and not wf_df.empty:
+        wf_copy = wf_df.copy()
+        wf_copy.insert(0, 'section', 'walk_forward')
+        wf_copy.insert(1, 'ticker', ticker)
+        wf_copy.insert(2, 'agent', agent)
+        summary_rows.extend(wf_copy.to_dict(orient='records'))
+
+    report_df = pd.DataFrame(summary_rows)
+    path = os.path.join(reports_dir, f'{safe_ticker}_{agent}_report.csv')
+    report_df.to_csv(path, index=False)
+    return path
+
+
+def _print_ticker_summary(metrics):
+    """Print a compact human-readable summary of the key indicators for a ticker."""
+    lines = [
+        f"  Total Return : {metrics.get('total_return_pct', 0):+.2f}%"
+        f"  (B&H: {metrics.get('bh_total_return_pct', 0):+.2f}%)",
+        f"  Sharpe Ratio : {metrics.get('sharpe_ratio', 0):.3f}",
+        f"  Max Drawdown : {metrics.get('max_drawdown_pct', 0):.2f}%",
+        f"  Win Rate     : {metrics.get('win_rate', 0)*100:.1f}%"
+        f"  ({metrics.get('trade_count', 0)} trades)",
+        f"  Avg Trade    : {metrics.get('avg_trade_profit', 0):+.4f}",
+        f"  Trade Freq   : {metrics.get('trade_frequency', 0):.4f}",
+        f"  Market Regime: {metrics.get('market_regime', 'n/a')}",
+    ]
+    for line in lines:
+        print(line)
+
+
 def _resolve_tickers(ticker_arg, config):
     """Return the list of tickers to process.
 
@@ -305,12 +354,27 @@ def main():
         metrics, _ = run_backtest(args.agent, ticker, config, model_path=args.model_path)
         wf_df = run_walk_forward_validation(args.agent, ticker, config, model_path=args.model_path)
         all_metrics.append(metrics)
+        path = save_ticker_report(metrics, wf_df, config)
+        print(f'\n--- {ticker} ({args.agent.upper()}) ---')
+        _print_ticker_summary(metrics)
         if not wf_df.empty:
-            print(f'\nWalk-forward summary ({ticker}):')
-            print(wf_df.to_string(index=False))
+            print(f'  Walk-forward ({len(wf_df)} fold(s)):')
+            for _, row in wf_df.iterrows():
+                print(
+                    f"    Fold {int(row.get('fold', 0))}: "
+                    f"return={row.get('total_return_pct', 0):.2f}% "
+                    f"sharpe={row.get('sharpe_ratio', 0):.3f} "
+                    f"drawdown={row.get('max_drawdown_pct', 0):.2f}% "
+                    f"regime={row.get('market_regime', 'n/a')}"
+                )
+        print(f'  Report saved → {path}')
 
-    print('\n=== Backtest Results ===')
-    print(pd.DataFrame(all_metrics).to_string(index=False))
+    print('\n=== Backtest Summary (all tickers) ===')
+    cols = ['ticker', 'agent', 'total_return_pct', 'sharpe_ratio', 'max_drawdown_pct',
+            'win_rate', 'trade_count', 'bh_total_return_pct', 'market_regime']
+    summary_df = pd.DataFrame(all_metrics)
+    available = [c for c in cols if c in summary_df.columns]
+    print(summary_df[available].to_string(index=False))
 
 
 if __name__ == '__main__':
