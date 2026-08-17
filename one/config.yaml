@@ -1,11 +1,59 @@
 initial_balance: 10000
-episodes: 50
-batch_size: 32
-epsilon_decay: 0.98        # Slower decay for extended exploration
-epsilon_min: 0.01
-gamma: 0.99
-lr: 0.001
 
-# Logging and metrics
-log_metrics: true
-log_interval: 5            # Log metrics every N episodes
+training:
+  episodes: 50
+  batch_size: 32
+  checkpoint_interval: 10
+
+data:
+  start: "2020-01-01"
+  end: "2023-12-31"
+  split_ratio: 0.8
+
+env:
+  window_size: 30
+  initial_balance: 10000
+  drawdown_penalty: 0.1
+  trade_bonus: 0.05
+  hold_penalty: 0.001
+  risk_reward_weight: 0.05
+  max_hold_steps: 20
+
+dqn:
+  gamma: 0.99
+  lr: 0.001
+  epsilon_start: 1.0
+  epsilon_decay: 0.995
+  epsilon_min: 0.01
+  memory_size: 20000
+  target_update_freq: 100
+  batch_size: 32
+  model_dir: "one/models/dqn"
+
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  actor_lr: 0.0003
+  critic_lr: 0.001
+  epochs: 10
+  minibatch_size: 64
+  continuous_actions: false
+  model_dir: "one/models/ppo"
+
+logging:
+  level: "INFO"
+  file: "one/logs/train.log"
+
+output:
+  metrics_csv: "one/training_metrics.csv"
+  plot: true
+
+backtest:
+  compare_agents: ["dqn", "ppo"]
+  models:
+    dqn: "one/models/dqn/best_model.keras"
+    ppo: "one/models/ppo/best_model"
+  report_csv: "one/backtest_report.csv"
