@@ -62,12 +62,17 @@ class BacktestEngine:
                 elif isinstance(agent, PPOAgent):
                     if hasattr(agent, 'critic') and agent.critic is not None:
                         try:
-                            value = agent.critic.predict(state.reshape(1, -1), verbose=0)[0][0]
+                            import torch as _torch
+                            _t = _torch.tensor(state, dtype=_torch.float32).unsqueeze(0)
+                            with _torch.no_grad():
+                                value = float(agent.critic(_t).item())
                         except Exception:
-                            value = 0
+                            try:
+                                value = float(agent.critic.predict(state.reshape(1, -1), verbose=0)[0][0])
+                            except Exception:
+                                value = 0
                     else:
                         value = 0
-                    next_state, reward, done = env.step(action)
                     agent.store_transition(state, action, reward, value)
                     if done:
                         agent.train()
