@@ -132,16 +132,16 @@ class DQNAgent(BaseAgent):
         self._decay_epsilon()
         return None
 
-    def save_best(self, reward, episode=None):
-        if reward <= self.best_reward:
+    def save_best(self, score, episode=None):
+        if score <= self.best_reward:
             return
-        self.best_reward = reward
+        self.best_reward = score
         os.makedirs(self.model_dir, exist_ok=True)
         path = os.path.join(self.model_dir, 'best_model.keras')
         self.save(path)
         if episode is not None:
             with open(os.path.join(self.model_dir, 'best_meta.txt'), 'w', encoding='utf-8') as handle:
-                handle.write(f'episode={episode}\nreward={reward}\n')
+                handle.write(f'episode={episode}\nscore={score}\n')
 
     def save_checkpoint(self, episode):
         os.makedirs(self.model_dir, exist_ok=True)

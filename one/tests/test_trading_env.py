@@ -60,3 +60,27 @@ def test_reward_shaping_penalizes_bad_holds():
     _, reward, _, _ = env.step(0)  # hold into declining market
 
     assert reward < 0
+
+
+def test_transaction_costs_reduce_portfolio_value():
+    rows = 80
+    dates = pd.date_range('2022-01-01', periods=rows, freq='D')
+    close = np.full(rows, 100.0)
+    df = pd.DataFrame(
+        {
+            'date': dates,
+            'open': close,
+            'high': close,
+            'low': close,
+            'close': close,
+            'volume': np.linspace(1000, 2000, rows),
+        }
+    )
+    df = add_indicators(df)
+    env = TradingEnv(df, window_size=20, commission_pct=0.01, slippage_pct=0.01)
+    env.reset()
+
+    env.step(1)  # buy
+    env.step(2)  # sell
+
+    assert env.balance < env.initial_balance

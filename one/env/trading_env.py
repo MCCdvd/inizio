@@ -15,6 +15,11 @@ class TradingEnv:
         hold_penalty=0.001,
         risk_reward_weight=0.05,
         max_hold_steps=20,
+        commission_pct=0.001,
+        slippage_pct=0.0005,
+        overtrade_penalty=0.001,
+        stop_loss_pct=0.05,
+        take_profit_pct=0.1,
     ):
         self.df = df.reset_index(drop=True).copy()
         self.initial_balance = float(initial_balance)
@@ -24,6 +29,11 @@ class TradingEnv:
         self.hold_penalty = float(hold_penalty)
         self.risk_reward_weight = float(risk_reward_weight)
         self.max_hold_steps = int(max_hold_steps)
+        self.commission_pct = max(float(commission_pct), 0.0)
+        self.slippage_pct = max(float(slippage_pct), 0.0)
+        self.overtrade_penalty = max(float(overtrade_penalty), 0.0)
+        self.stop_loss_pct = max(float(stop_loss_pct), 0.0)
+        self.take_profit_pct = max(float(take_profit_pct), 0.0)
 
         self._prepare_features()
         self.reset()
@@ -165,37 +175,73 @@ class TradingEnv:
 
         if action == 1:  # Buy
             if self.shares_held <= 0 and self.balance > current_price:
-                shares = self.balance / current_price
+                fill_price = current_price * (1.0 + self.slippage_pct)
+                shares = self.balance / max(fill_price, 1e-8)
+                trade_value = shares * fill_price
+                fee = trade_value * self.commission_pct
                 self.shares_held = shares
-                self.balance = 0.0
-                self.entry_price = current_price
+                self.balance = max(self.balance - trade_value - fee, 0.0)
+                self.entry_price = fill_price
                 self.holding_steps = 0
-                self.trades.append({'step': self.current_step, 'action': 'buy', 'price': current_price})
+                self.trades.append({'step': self.current_step, 'action': 'buy', 'price': fill_price, 'fee': fee})
+                reward -= fee / max(self.initial_balance, 1e-8)
+                reward -= self.overtrade_penalty
 
         elif action == 2:  # Sell
             if self.shares_held > 0:
-                proceeds = self.shares_held * current_price
+                fill_price = current_price * (1.0 - self.slippage_pct)
+                proceeds = self.shares_held * fill_price
                 cost_basis = self.shares_held * self.entry_price
+                fee = proceeds * self.commission_pct
                 profit = proceeds - cost_basis
                 profit_pct = profit / max(cost_basis, 1e-8)
 
-                self.balance = proceeds
+                self.balance = max(proceeds - fee, 0.0)
                 self.shares_held = 0.0
-                self.realized_pnl += profit
+                self.realized_pnl += profit - fee
                 self.trade_profits.append(float(profit_pct))
                 self.trades.append(
                     {
                         'step': self.current_step,
                         'action': 'sell',
-                        'price': current_price,
+                        'price': fill_price,
+                        'fee': fee,
                         'profit_pct': float(profit_pct),
                     }
                 )
                 reward += self.trade_bonus * profit_pct
+                reward -= fee / max(self.initial_balance, 1e-8)
+                reward -= self.overtrade_penalty
                 self.holding_steps = 0
 
         if self.shares_held > 0:
             self.holding_steps += 1
+
+        if self.shares_held > 0 and self.entry_price > 0:
+            unrealized = (current_price - self.entry_price) / self.entry_price
+            if unrealized <= -self.stop_loss_pct or unrealized >= self.take_profit_pct:
+                forced_price = current_price * (1.0 - self.slippage_pct)
+                proceeds = self.shares_held * forced_price
+                fee = proceeds * self.commission_pct
+                cost_basis = self.shares_held * self.entry_price
+                profit = proceeds - cost_basis
+                profit_pct = profit / max(cost_basis, 1e-8)
+                self.balance = max(proceeds - fee, 0.0)
+                self.realized_pnl += profit - fee
+                self.trade_profits.append(float(profit_pct))
+                self.trades.append(
+                    {
+                        'step': self.current_step,
+                        'action': 'forced_sell',
+                        'price': forced_price,
+                        'fee': fee,
+                        'profit_pct': float(profit_pct),
+                    }
+                )
+                self.shares_held = 0.0
+                self.holding_steps = 0
+                reward += self.trade_bonus * profit_pct
+                reward -= fee / max(self.initial_balance, 1e-8)
 
         self.current_step += 1
         done = self.current_step >= len(self.df) - 1

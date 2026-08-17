@@ -4,11 +4,24 @@ training:
   episodes: 50
   batch_size: 32
   checkpoint_interval: 10
+  seed: 42
+  early_stopping_patience: 8
+  early_stopping_min_delta: 0.001
+
+objective:
+  primary_metric: "sharpe_ratio"
 
 data:
   start: "2020-01-01"
   end: "2026-06-30"
   split_ratio: 0.8
+  timeframe: "1D"
+  fill_missing: true
+  outlier_zscore_threshold: 4.0
+
+features:
+  indicators: ["all"]
+  volume_profile_lookback: 30
 
 env:
   window_size: 30
@@ -18,6 +31,11 @@ env:
   hold_penalty: 0.001
   risk_reward_weight: 0.05
   max_hold_steps: 20
+  commission_pct: 0.001
+  slippage_pct: 0.0005
+  overtrade_penalty: 0.001
+  stop_loss_pct: 0.05
+  take_profit_pct: 0.1
 
 dqn:
   gamma: 0.99
@@ -50,6 +68,9 @@ logging:
 output:
   metrics_csv: "one/training_metrics.csv"
   plot: true
+  leaderboard_csv: "one/leaderboard.csv"
+  walk_forward_csv: "one/walk_forward_report.csv"
+  retrain_status_json: "one/retrain_status.json"
 
 backtest:
   compare_agents: ["dqn", "ppo"]
@@ -57,3 +78,17 @@ backtest:
     dqn: "one/models/dqn/best_model.keras"
     ppo: "one/models/ppo/best_model"
   report_csv: "one/backtest_report.csv"
+
+search:
+  max_trials: 4
+  grid:
+    dqn:
+      gamma: [0.95, 0.99]
+      lr: [0.001, 0.0005]
+    ppo:
+      actor_lr: [0.0003, 0.0001]
+      clip_ratio: [0.2, 0.1]
+
+validation:
+  walk_forward_folds: 3
+  retrain_degradation_threshold: 0.05
