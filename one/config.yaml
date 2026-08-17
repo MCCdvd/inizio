@@ -12,6 +12,14 @@ objective:
   primary_metric: "sharpe_ratio"
 
 data:
+  tickers:
+    - "AAPL"       # Apple
+    - "KO"         # Coca-Cola
+    - "MSFT"       # Microsoft
+    - "AMZN"       # Amazon
+    - "STLA"       # Stellantis
+    - "BAS.DE"     # BASF (Xetra)
+    # Sun Chemical is a privately held company and has no stock ticker
   start: "2020-01-01"
   end: "2026-06-30"
   split_ratio: 0.8

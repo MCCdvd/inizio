@@ -258,28 +258,59 @@ def compare_agents(agent_names, ticker, config):
     return df
 
 
+def _resolve_tickers(ticker_arg, config):
+    """Return the list of tickers to process.
+
+    If *ticker_arg* is ``'all'`` (or omitted), the list is read from
+    ``config.data.tickers``.  Otherwise the single value is returned as a
+    one-element list.
+    """
+    if ticker_arg == 'all':
+        tickers = config.get('data', {}).get('tickers', [])
+        if not tickers:
+            raise ValueError(
+                "No tickers found in config.data.tickers. "
+                "Add a 'tickers' list to config.yaml or pass --ticker <SYMBOL>."
+            )
+        return tickers
+    return [ticker_arg]
+
+
 def main():
     parser = argparse.ArgumentParser(description='Backtest one/ trading agents')
     parser.add_argument('--agent', choices=['dqn', 'ppo', 'a3c', 'compare'], default='dqn')
-    parser.add_argument('--ticker', default='AAPL')
+    parser.add_argument(
+        '--ticker',
+        default='all',
+        help="Ticker symbol (e.g. AAPL) or 'all' to iterate over config.data.tickers",
+    )
     parser.add_argument('--config', default=os.path.join(os.path.dirname(__file__), 'config.yaml'))
     parser.add_argument('--model-path', default=None)
     args = parser.parse_args()
 
     config = _load_config(args.config)
+    tickers = _resolve_tickers(args.ticker, config)
 
     if args.agent == 'compare':
         compare = config.get('backtest', {}).get('compare_agents', ['dqn', 'ppo'])
-        result_df = compare_agents(compare, args.ticker, config)
-        print(result_df.to_string(index=False))
+        all_results = []
+        for ticker in tickers:
+            result_df = compare_agents(compare, ticker, config)
+            all_results.append(result_df)
+        print(pd.concat(all_results, ignore_index=True).to_string(index=False))
         return
 
-    metrics, _ = run_backtest(args.agent, args.ticker, config, model_path=args.model_path)
-    wf_df = run_walk_forward_validation(args.agent, args.ticker, config, model_path=args.model_path)
-    print(pd.DataFrame([metrics]).to_string(index=False))
-    if not wf_df.empty:
-        print('\nWalk-forward summary:')
-        print(wf_df.to_string(index=False))
+    all_metrics = []
+    for ticker in tickers:
+        metrics, _ = run_backtest(args.agent, ticker, config, model_path=args.model_path)
+        wf_df = run_walk_forward_validation(args.agent, ticker, config, model_path=args.model_path)
+        all_metrics.append(metrics)
+        if not wf_df.empty:
+            print(f'\nWalk-forward summary ({ticker}):')
+            print(wf_df.to_string(index=False))
+
+    print('\n=== Backtest Results ===')
+    print(pd.DataFrame(all_metrics).to_string(index=False))
 
 
 if __name__ == '__main__':

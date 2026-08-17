@@ -417,13 +417,28 @@ def run_training(config, ticker='AAPL', agent_name='dqn'):
 def main():
     parser = argparse.ArgumentParser(description='Train trading agents in one/')
     parser.add_argument('--agent', choices=['dqn', 'ppo', 'a3c'], default='dqn')
-    parser.add_argument('--ticker', default='AAPL')
+    parser.add_argument(
+        '--ticker',
+        default='all',
+        help="Ticker symbol (e.g. AAPL) or 'all' to iterate over config.data.tickers",
+    )
     parser.add_argument('--config', default=os.path.join(os.path.dirname(__file__), 'config.yaml'))
     args = parser.parse_args()
 
     try:
         config = _load_config(args.config)
-        run_training(config=config, ticker=args.ticker, agent_name=args.agent)
+        if args.ticker == 'all':
+            tickers = config.get('data', {}).get('tickers', [])
+            if not tickers:
+                raise ValueError(
+                    "No tickers found in config.data.tickers. "
+                    "Add a 'tickers' list to config.yaml or pass --ticker <SYMBOL>."
+                )
+        else:
+            tickers = [args.ticker]
+
+        for ticker in tickers:
+            run_training(config=config, ticker=ticker, agent_name=args.agent)
     except Exception as exc:
         logger = setup_logger(name='one.train', level='ERROR')
         logger.exception('Training failed: %s', exc)
