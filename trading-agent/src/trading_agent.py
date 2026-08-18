@@ -124,8 +124,15 @@ class TradingEnvironmentWithVolumeProfile:
             self.prices = np.array([])
             self.volumes = np.array([])
             return self.prices, self.volumes
-        self.prices = data['Close'].values
-        self.volumes = data['Volume'].values
+        close = data['Close']
+        if isinstance(close, pd.DataFrame):
+            close = close.squeeze(axis=1)
+        self.prices = close.to_numpy().flatten().astype(float)
+
+        volume = data['Volume']
+        if isinstance(volume, pd.DataFrame):
+            volume = volume.squeeze(axis=1)
+        self.volumes = volume.to_numpy().flatten().astype(float)
         return self.prices, self.volumes
     
     def update_volume_profile(self, lookback_window: int = None):

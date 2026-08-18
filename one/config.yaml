@@ -1,11 +1,126 @@
 initial_balance: 10000
-episodes: 50
-batch_size: 32
-epsilon_decay: 0.98        # Slower decay for extended exploration
-epsilon_min: 0.01
-gamma: 0.99
-lr: 0.001
 
-# Logging and metrics
-log_metrics: true
-log_interval: 5            # Log metrics every N episodes
+training:
+  episodes: 50
+  batch_size: 32
+  checkpoint_interval: 10
+  seed: 42
+  early_stopping_patience: 8
+  early_stopping_min_delta: 0.001
+
+objective:
+  primary_metric: "win_rate_drawdown"
+  drawdown_weight: 0.02
+  min_trades: 6
+  low_trade_penalty: 0.05
+
+data:
+  tickers:
+    - "AAPL"       # Apple
+    - "KO"         # Coca-Cola
+    - "MSFT"       # Microsoft
+    - "AMZN"       # Amazon
+    - "STLA"       # Stellantis
+    - "BAS.DE"     # BASF (Xetra)
+    # Sun Chemical is a privately held company and has no stock ticker
+  start: "2023-01-01"
+  end: "2024-01-01"
+  split_ratio: 0.8
+  timeframe: "1D"
+  fill_missing: true
+  outlier_zscore_threshold: 4.0
+
+features:
+  indicators: ["ema", "rsi", "macd", "volume_profile"]
+  volume_profile_lookback: 40
+
+policy:
+  action_threshold: 0.45
+
+env:
+  window_size: 30
+  initial_balance: 10000
+  drawdown_penalty: 0.15
+  trade_bonus: 0.035
+  hold_penalty: 0.0025
+  risk_reward_weight: 0.05
+  max_hold_steps: 12
+  commission_pct: 0.001
+  slippage_pct: 0.0005
+  overtrade_penalty: 0.002
+  stop_loss_pct: 0.03
+  take_profit_pct: 0.07
+  loss_penalty_weight: 0.2
+  min_profit_bonus_pct: 0.003
+  weak_profit_penalty: 0.001
+
+dqn:
+  gamma: 0.99
+  lr: 0.001
+  epsilon_start: 1.0
+  epsilon_decay: 0.995
+  epsilon_min: 0.01
+  memory_size: 20000
+  target_update_freq: 100
+  batch_size: 32
+  model_dir: "one/models/dqn"
+
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  actor_lr: 0.0003
+  critic_lr: 0.001
+  epochs: 10
+  minibatch_size: 64
+  continuous_actions: false
+  model_dir: "one/models/ppo"
+
+logging:
+  level: "INFO"
+  file: "one/logs/train.log"
+
+output:
+  metrics_csv: "one/training_metrics.csv"
+  plot: true
+  leaderboard_csv: "one/leaderboard.csv"
+  walk_forward_csv: "one/walk_forward_report.csv"
+  retrain_status_json: "one/retrain_status.json"
+  reports_dir: "one/reports"
+
+backtest:
+  compare_agents: ["dqn", "ppo"]
+  models:
+    dqn: "one/models/dqn/best_model.keras"
+    ppo: "one/models/ppo/best_model"
+  report_csv: "one/backtest_report.csv"
+
+search:
+  max_trials: 12
+  grid:
+    dqn:
+      gamma: [0.95, 0.99]
+      lr: [0.001, 0.0005]
+      epsilon_decay: [0.995, 0.998]
+      epsilon_min: [0.01, 0.005]
+      target_update_freq: [100, 200]
+      env.overtrade_penalty: [0.0015, 0.0025]
+      env.stop_loss_pct: [0.025, 0.03]
+      env.take_profit_pct: [0.06, 0.08]
+      policy.action_threshold: [0.4, 0.5]
+      features.volume_profile_lookback: [30, 40]
+    ppo:
+      actor_lr: [0.0003, 0.0001]
+      clip_ratio: [0.2, 0.1]
+      entropy_coef: [0.01, 0.02]
+      env.overtrade_penalty: [0.0015, 0.0025]
+      env.stop_loss_pct: [0.025, 0.03]
+      env.take_profit_pct: [0.06, 0.08]
+      policy.action_threshold: [0.4, 0.5]
+      features.volume_profile_lookback: [30, 40]
+
+validation:
+  walk_forward_folds: 3
+  retrain_degradation_threshold: 0.05

@@ -1,81 +1,63 @@
-# one: Improved RL Trading Agent Folder
+# one: Reinforcement Learning Trading Agent
 
-This folder contains a modern implementation of a deep RL trading agent using DQN (with hooks for PPO/A3C), advanced technical indicators, improved reward shaping, and strong code modularity.
+Enhanced `one/` implementation with DQN + PPO training, reward shaping, and backtesting.
 
 ## Structure
 
 ```
 one/
 ├── agents/
-│   ├── dqn_agent.py         # DQN agent implementation with GPU support
+│   ├── __init__.py
+│   ├── base_agent.py
+│   ├── dqn_agent.py
+│   └── ppo_agent.py
 ├── env/
-│   ├── trading_env.py       # Trading environment with risk and reward shaping
+│   └── trading_env.py
 ├── features/
-│   ├── indicators.py        # Technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands)
+│   └── indicators.py
 ├── utils/
-│   ├── plot.py              # Plotting utilities for rewards/actions
-├── train.py                 # Training loop with GPU/CPU auto-detection
-├── config.yaml              # Hyperparameters and configuration
-└── README.md                # This file
+│   ├── logger.py
+│   ├── metrics.py
+│   └── plot.py
+├── train.py
+├── backtest.py
+└── config.yaml
 ```
+
+## Key Improvements
+
+- Built-in logging via `utils/logger.py` (no external logging module dependency)
+- State includes normalized OHLCV + indicators + portfolio context
+- Reward shaping includes return, drawdown penalty, trade efficiency, and risk-adjusted signal
+- DQN upgraded to Double-DQN style target network and checkpointing
+- New PPO implementation with clipped PPO objective + GAE
+- Backtesting with return, Sharpe, max drawdown, win rate, trade count, and average trade profit
+- Metrics exported to CSV and optional plots for rewards/equity/actions
 
 ## Setup
 
-1. **Install requirements:**
 ```bash
 pip install tensorflow pandas numpy matplotlib yfinance pyyaml
 ```
 
-2. **Run training:**
+## Train
+
 ```bash
-python one/train.py
+python one/train.py --agent dqn --ticker AAPL
+python one/train.py --agent ppo --ticker AAPL
 ```
 
-Market data is automatically fetched from Yahoo Finance (AAPL stock by default).
+## Backtest
 
-## Features
-
-- **Automatic GPU Detection**: Uses GPU if available, falls back to CPU
-- **Technical Indicators**: SMA, EMA, RSI, MACD, Bollinger Bands
-- **DQN Agent**: Deep Q-Network with experience replay and epsilon-greedy exploration
-- **Trading Environment**: Realistic buy/hold/sell actions with portfolio tracking
-- **Configurable Training**: Adjust episodes, batch size, and learning parameters in `config.yaml`
-
-## Performance Tips
-
-### For CPU-only machines:
-- Reduce `episodes` in `config.yaml` (default: 50, try 20-30)
-- Reduce `batch_size` (default: 32, try 16)
-- Agent will still learn effectively with smaller settings
-
-### For GPU machines:
-- Increase `episodes` for longer training
-- Increase `batch_size` for better GPU utilization
-- Training will be 5-10x faster than CPU
-
-## Configuration
-
-Edit `one/config.yaml`:
-```yaml
-episodes: 50          # Number of training episodes
-batch_size: 32        # Batch size for experience replay
+```bash
+python one/backtest.py --agent dqn --ticker AAPL --model-path one/models/dqn/best_model.keras
+python one/backtest.py --agent ppo --ticker AAPL --model-path one/models/ppo/best_model
+python one/backtest.py --agent compare --ticker AAPL
 ```
 
-## Training Output
+## Outputs
 
-The script will display:
-- GPU/CPU device being used
-- Data date range
-- Episode rewards and epsilon decay
-- Best model saves when performance improves
-
-## Next Steps
-
-- Tune hyperparameters in `config.yaml`
-- Modify `one/env/trading_env.py` to add more complex reward shaping
-- Implement PPO or A3C agents (hooks available in agents folder)
-- Test on different stock tickers
-
----
-
-This codebase gives you a strong starting point to build, tune, and experiment with state-of-the-art RL trading agents.
+- Training log file: `one/logs/train.log`
+- Training metrics CSV: `one/training_metrics.csv`
+- Backtest comparison CSV: `one/backtest_report.csv`
+- Model checkpoints in `one/models/dqn` and `one/models/ppo`
