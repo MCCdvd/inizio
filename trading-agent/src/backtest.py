@@ -3,7 +3,7 @@ import argparse
 import csv
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 
 import numpy as np
@@ -273,7 +273,7 @@ def parse_args():
     parser.add_argument(
         "--end-date",
         type=str,
-        default=datetime.now().strftime("%Y-%m-%d"),
+        default=datetime.now(UTC).strftime("%Y-%m-%d"),
         help="End date (YYYY-MM-DD)",
     )
     parser.add_argument(
@@ -296,7 +296,13 @@ def parse_args():
 
 
 if __name__ == "__main__":
+try:
     args = parse_args()
+	if args.episodes <= 0:
+		raise ValueError("--episodes must be > 0")
+
+	if args.start_date > args.end:date:
+		raise ValueError("--start-date must be <= --end-date")
 
     engine = BacktestEngine(
         stock_symbol=args.symbol,
@@ -316,3 +322,6 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         no_plot=args.no_plot,
     )
+except Exception as e:
+	logger.exception(f"Backtest failed: {e}")
+	raise SystemExit(1)
