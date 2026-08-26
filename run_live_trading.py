@@ -152,8 +152,9 @@ class LiveTradingAgent:
             # Run trading loop
             step_count = 0
             trades_executed = []
+            max_steps = len(prices) - 1
             
-            while not self.env.current_step >= len(prices) - 1:
+            while step_count < max_steps:
                 current_price = prices[self.env.current_step]
                 
                 # Simple strategy: Buy at VAL, Sell at VAH
@@ -190,12 +191,13 @@ class LiveTradingAgent:
                 state, reward, done = self.env.step(0)  # HOLD action
                 step_count += 1
                 
-                if step_count % 10 == 0:
-                    logger.info(f"Step {step_count}: Price=${current_price:.2f}, "
+                if step_count % 5 == 0:
+                    logger.info(f"Step {step_count}/{max_steps}: Price=${current_price:.2f}, "
                               f"Shares={self.env.shares_held}, "
                               f"Balance=${self.env.balance:.2f}")
                 
                 if done:
+                    logger.info("Episode done!")
                     break
             
             # Summary
