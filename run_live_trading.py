@@ -196,9 +196,10 @@ class LiveTradingAgent:
                               f"Shares={self.env.shares_held}, "
                               f"Balance=${self.env.balance:.2f}")
                 
-                if done:
-                    logger.info("Episode done!")
-                    break
+                # Continue processing all bars regardless of done flag
+                # if done:
+                #     logger.info("Episode done!")
+                #     break
             
             # Summary
             logger.info("\n" + "="*70)
