@@ -2,6 +2,7 @@ pip requirements
 numpy>=1.21.0
 pandas>=1.3.0
 yfinance>=0.1.70
+ib-insync>=0.9.86  # Optional: for Interactive Brokers (IBKR) data support
 torch>=1.12.0
 tensorflow>=2.8.0
 matplotlib>=3.4.0
