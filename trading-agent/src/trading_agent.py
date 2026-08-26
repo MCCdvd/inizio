@@ -1,12 +1,15 @@
 """
 Trading Agent Environment with Volume Profile Analysis
 """
+import logging
 import numpy as np
 import pandas as pd
 import random
 from typing import Tuple, List, Dict, Optional
 import yfinance as yf
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 
 class VolumeProfileAnalyzer:
@@ -95,7 +98,18 @@ class VolumeProfileAnalyzer:
 class TradingEnvironmentWithVolumeProfile:
     """Stock trading environment using volume profile for targets"""
     
-    def __init__(self, stock_symbol: str, initial_balance: float = 10000, lookback_days: int = 30, seed: Optional[int] = None):
+    def __init__(
+        self,
+        stock_symbol: str,
+        initial_balance: float = 10000,
+        lookback_days: int = 30,
+        seed: Optional[int] = None,
+        data_source: str = "yahoo",
+        ibkr_host: str = "127.0.0.1",
+        ibkr_port: int = 7497,
+        ibkr_client_id: int = 11,
+        ibkr_timeframe: str = "1 day",
+    ):
         self.stock_symbol = stock_symbol
         self.initial_balance = float(initial_balance)
         self.balance = float(initial_balance)
@@ -108,6 +122,12 @@ class TradingEnvironmentWithVolumeProfile:
         self.lookback_days = int(lookback_days)
         self.seed = seed
 
+        self.data_source = str(data_source).lower()
+        self.ibkr_host = ibkr_host
+        self.ibkr_port = int(ibkr_port)
+        self.ibkr_client_id = int(ibkr_client_id)
+        self.ibkr_timeframe = ibkr_timeframe
+
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -117,15 +137,61 @@ class TradingEnvironmentWithVolumeProfile:
         self.vah = 0.0
         self.val = 0.0
         
-    def load_data(self, start_date: str, end_date: str):
-        """Load historical stock data"""
-        data = yf.download(self.stock_symbol, start=start_date, end=end_date, progress=False)
-        if data is None or data.empty:
-            self.prices = np.array([])
-            self.volumes = np.array([])
-            return self.prices, self.volumes
-        self.prices = data['Close'].values
-        self.volumes = data['Volume'].values
+    def load_data(self, start_date: str, end_date: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Load historical stock data from Yahoo (default) or IBKR.
+
+        If ``data_source`` is ``"ibkr"`` and the connection fails for any
+        reason, the method silently falls back to Yahoo Finance.
+
+        Parameters
+        ----------
+        start_date : str
+            ISO-8601 start date (``"YYYY-MM-DD"``).
+        end_date : str
+            ISO-8601 end date (``"YYYY-MM-DD"``).
+
+        Returns
+        -------
+        prices : np.ndarray
+            1-D array of closing prices (float64).
+        volumes : np.ndarray
+            1-D array of trading volumes (float64).
+        """
+        from data_connectors import ConnectorFactory
+
+        logger.info(
+            "load_data: symbol=%s source=%s start=%s end=%s",
+            self.stock_symbol, self.data_source, start_date, end_date,
+        )
+
+        factory = ConnectorFactory(
+            data_source=self.data_source,
+            ibkr_host=self.ibkr_host,
+            ibkr_port=self.ibkr_port,
+            ibkr_client_id=self.ibkr_client_id,
+            ibkr_timeframe=self.ibkr_timeframe,
+        )
+
+        if self.data_source == "ibkr":
+            try:
+                connector = factory.get_connector()
+                prices, volumes = connector.fetch_bars(self.stock_symbol, start_date, end_date)
+                if prices is not None and len(prices) > 0:
+                    self.prices = prices
+                    self.volumes = volumes
+                    return self.prices, self.volumes
+                logger.warning("load_data: IBKR returned empty data, falling back to Yahoo Finance")
+            except Exception as exc:
+                logger.warning(
+                    "load_data: IBKR connection failed (%s), falling back to Yahoo Finance", exc
+                )
+
+        # Yahoo default (or fallback if IBKR fails / returns empty)
+        logger.info("load_data: using Yahoo Finance for %s", self.stock_symbol)
+        yahoo = ConnectorFactory(data_source="yahoo").get_connector()
+        prices, volumes = yahoo.fetch_bars(self.stock_symbol, start_date, end_date)
+        self.prices = prices
+        self.volumes = volumes
         return self.prices, self.volumes
     
     def update_volume_profile(self, lookback_window: int = None):
