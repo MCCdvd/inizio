@@ -112,7 +112,9 @@ class LiveTradingAgent:
             return None
     
     def run_live_session(self, days=30, require_approval=True, enable_debug=True):
-        """Run live trading session
+        """Run live trading session using Volume Profile strategy
+        
+        Strategy: Buy when price enters Value Area (VAL), Sell when price exits above VAH
         
         Parameters
         ----------
@@ -151,6 +153,9 @@ class LiveTradingAgent:
             logger.info(f"   Current price: ${prices[self.env.current_step]:.2f}")
             logger.info(f"   Manual approval: {'ENABLED' if require_approval else 'DISABLED'}")
             logger.info(f"   Debug logging: {'ENABLED' if enable_debug else 'DISABLED'}")
+            logger.info(f"\n📌 STRATEGY: Volume Profile (70% of Volume)")
+            logger.info(f"   Buy:  When price enters Value Area (Price >= VAL)")
+            logger.info(f"   Sell: When price exits above VAH")
             
             # Run trading loop
             step_count = 0
@@ -170,13 +175,17 @@ class LiveTradingAgent:
                               f"VAH=${current_vah:.2f}, "
                               f"Shares={self.env.shares_held}")
                 
-                # Simple strategy: Buy at VAL, Sell at VAH
-                if self.env.shares_held == 0 and current_price <= current_val:
-                    # BUY signal
+                # Volume Profile Strategy:
+                # Buy when price enters value area (>= VAL)
+                # Sell when price exits above VAH
+                
+                if self.env.shares_held == 0 and current_val > 0 and current_price >= current_val:
+                    # BUY signal: Price entered or is in Value Area
                     max_shares = int(self.env.balance / current_price)
                     if max_shares > 0:
                         quantity = max(1, max_shares // 2)
-                        logger.info(f"\n💰 BUY Signal at ${current_price:.2f} (VAL: ${current_val:.2f})")
+                        logger.info(f"\n💰 BUY Signal at ${current_price:.2f} (VAL: ${current_val:.2f}, VAH: ${current_vah:.2f})")
+                        logger.info(f"   Price entered Value Area - Volume Profile Entry")
                         
                         # Place live order
                         if require_approval:
@@ -187,9 +196,10 @@ class LiveTradingAgent:
                         if trade:
                             trades_executed.append(("BUY", quantity, current_price))
                 
-                elif self.env.shares_held > 0 and current_price >= current_vah:
-                    # SELL signal
+                elif self.env.shares_held > 0 and current_vah > 0 and current_price > current_vah:
+                    # SELL signal: Price exited above Value Area (above VAH)
                     logger.info(f"\n💵 SELL Signal at ${current_price:.2f} (VAH: ${current_vah:.2f})")
+                    logger.info(f"   Price exited Value Area - Volume Profile Exit")
                     
                     # Place live order
                     if require_approval:
@@ -227,6 +237,7 @@ class LiveTradingAgent:
             logger.info(f"  Current price: ${final_price:.2f}")
             logger.info(f"  Total value: ${final_value:.2f}")
             logger.info(f"  P&L: ${final_value - self.env.initial_balance:.2f}")
+            logger.info(f"  Return: {((final_value - self.env.initial_balance) / self.env.initial_balance * 100):.2f}%")
             
         finally:
             self.disconnect()
@@ -242,6 +253,6 @@ if __name__ == "__main__":
     # Create live agent
     agent = LiveTradingAgent(symbol="AAPL", initial_balance=10000)
     
-    # Run live session (30 days) with manual approval enabled for safety
-    # and debug logging enabled to see VAL/VAH levels
+    # Run live session (30 days) with Volume Profile strategy
+    # Manual approval enabled for safety
     agent.run_live_session(days=30, require_approval=True, enable_debug=True)
