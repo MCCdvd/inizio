@@ -30,6 +30,10 @@ class LiveTradingAgent:
         self.ib = IB()
         self.connected = False
         
+        # Track entry/exit states to prevent repeated signals
+        self.entry_triggered = False  # Flag to prevent repeated BUY signals
+        self.exit_triggered = False   # Flag to prevent repeated SELL signals
+        
     def connect(self):
         """Connect to IB Gateway"""
         try:
@@ -115,6 +119,7 @@ class LiveTradingAgent:
         """Run live trading session using Volume Profile strategy
         
         Strategy: Buy when price enters Value Area (VAL), Sell when price exits above VAH
+        Uses entry/exit flags to prevent repeated signals within the same trade cycle.
         
         Parameters
         ----------
@@ -154,8 +159,8 @@ class LiveTradingAgent:
             logger.info(f"   Manual approval: {'ENABLED' if require_approval else 'DISABLED'}")
             logger.info(f"   Debug logging: {'ENABLED' if enable_debug else 'DISABLED'}")
             logger.info(f"\n📌 STRATEGY: Volume Profile (70% of Volume)")
-            logger.info(f"   Buy:  When price enters Value Area (Price >= VAL)")
-            logger.info(f"   Sell: When price exits above VAH")
+            logger.info(f"   Buy:  When price enters Value Area (Price >= VAL) - ONCE per cycle")
+            logger.info(f"   Sell: When price exits above VAH - ONCE per cycle")
             
             # Run trading loop
             step_count = 0
@@ -173,14 +178,18 @@ class LiveTradingAgent:
                               f"Price=${current_price:.2f}, "
                               f"VAL=${current_val:.2f}, "
                               f"VAH=${current_vah:.2f}, "
-                              f"Shares={self.env.shares_held}")
+                              f"Shares={self.env.shares_held}, "
+                              f"Entry_Triggered={self.entry_triggered}")
                 
                 # Volume Profile Strategy:
-                # Buy when price enters value area (>= VAL)
-                # Sell when price exits above VAH
+                # Buy when price enters value area (>= VAL) - ONLY ONCE
+                # Sell when price exits above VAH - ONLY ONCE
                 
-                if self.env.shares_held == 0 and current_val > 0 and current_price >= current_val:
-                    # BUY signal: Price entered or is in Value Area
+                if (self.env.shares_held == 0 and 
+                    not self.entry_triggered and 
+                    current_val > 0 and 
+                    current_price >= current_val):
+                    # BUY signal: Price entered Value Area (first time only)
                     max_shares = int(self.env.balance / current_price)
                     if max_shares > 0:
                         quantity = max(1, max_shares // 2)
@@ -195,9 +204,14 @@ class LiveTradingAgent:
                         
                         if trade:
                             trades_executed.append(("BUY", quantity, current_price))
+                            self.entry_triggered = True  # Prevent further BUY signals
+                            self.exit_triggered = False   # Reset SELL flag for new cycle
                 
-                elif self.env.shares_held > 0 and current_vah > 0 and current_price > current_vah:
-                    # SELL signal: Price exited above Value Area (above VAH)
+                elif (self.env.shares_held > 0 and 
+                      not self.exit_triggered and 
+                      current_vah > 0 and 
+                      current_price > current_vah):
+                    # SELL signal: Price exited above Value Area (first time only)
                     logger.info(f"\n💵 SELL Signal at ${current_price:.2f} (VAH: ${current_vah:.2f})")
                     logger.info(f"   Price exited Value Area - Volume Profile Exit")
                     
@@ -209,6 +223,8 @@ class LiveTradingAgent:
                     
                     if trade:
                         trades_executed.append(("SELL", self.env.shares_held, current_price))
+                        self.exit_triggered = True    # Prevent further SELL signals
+                        self.entry_triggered = False  # Reset BUY flag for next cycle
                 
                 # Execute environment step
                 state, reward, done = self.env.step(0)  # HOLD action
