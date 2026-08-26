@@ -111,7 +111,7 @@ class LiveTradingAgent:
             logger.info("   ❌ Order REJECTED")
             return None
     
-    def run_live_session(self, days=30, require_approval=True):
+    def run_live_session(self, days=30, require_approval=True, enable_debug=True):
         """Run live trading session
         
         Parameters
@@ -120,6 +120,8 @@ class LiveTradingAgent:
             Number of days of historical data to use
         require_approval : bool
             If True, require manual approval for each order
+        enable_debug : bool
+            If True, log debug information for VAL/VAH levels
         """
         
         if not self.connect():
@@ -148,6 +150,7 @@ class LiveTradingAgent:
             logger.info(f"   Initial balance: ${self.env.initial_balance:.2f}")
             logger.info(f"   Current price: ${prices[self.env.current_step]:.2f}")
             logger.info(f"   Manual approval: {'ENABLED' if require_approval else 'DISABLED'}")
+            logger.info(f"   Debug logging: {'ENABLED' if enable_debug else 'DISABLED'}")
             
             # Run trading loop
             step_count = 0
@@ -156,14 +159,24 @@ class LiveTradingAgent:
             
             while step_count < max_steps:
                 current_price = prices[self.env.current_step]
+                current_val = self.env.val
+                current_vah = self.env.vah
+                
+                # Debug logging
+                if enable_debug and step_count % 5 == 0:
+                    logger.info(f"DEBUG: Step {step_count}/{max_steps}: "
+                              f"Price=${current_price:.2f}, "
+                              f"VAL=${current_val:.2f}, "
+                              f"VAH=${current_vah:.2f}, "
+                              f"Shares={self.env.shares_held}")
                 
                 # Simple strategy: Buy at VAL, Sell at VAH
-                if self.env.shares_held == 0 and current_price <= self.env.val:
+                if self.env.shares_held == 0 and current_price <= current_val:
                     # BUY signal
                     max_shares = int(self.env.balance / current_price)
                     if max_shares > 0:
                         quantity = max(1, max_shares // 2)
-                        logger.info(f"\n💰 BUY Signal at ${current_price:.2f} (VAL: ${self.env.val:.2f})")
+                        logger.info(f"\n💰 BUY Signal at ${current_price:.2f} (VAL: ${current_val:.2f})")
                         
                         # Place live order
                         if require_approval:
@@ -174,9 +187,9 @@ class LiveTradingAgent:
                         if trade:
                             trades_executed.append(("BUY", quantity, current_price))
                 
-                elif self.env.shares_held > 0 and current_price >= self.env.vah:
+                elif self.env.shares_held > 0 and current_price >= current_vah:
                     # SELL signal
-                    logger.info(f"\n💵 SELL Signal at ${current_price:.2f} (VAH: ${self.env.vah:.2f})")
+                    logger.info(f"\n💵 SELL Signal at ${current_price:.2f} (VAH: ${current_vah:.2f})")
                     
                     # Place live order
                     if require_approval:
@@ -190,11 +203,6 @@ class LiveTradingAgent:
                 # Execute environment step
                 state, reward, done = self.env.step(0)  # HOLD action
                 step_count += 1
-                
-                if step_count % 5 == 0:
-                    logger.info(f"Step {step_count}/{max_steps}: Price=${current_price:.2f}, "
-                              f"Shares={self.env.shares_held}, "
-                              f"Balance=${self.env.balance:.2f}")
                 
                 # Continue processing all bars regardless of done flag
                 # if done:
@@ -235,4 +243,5 @@ if __name__ == "__main__":
     agent = LiveTradingAgent(symbol="AAPL", initial_balance=10000)
     
     # Run live session (30 days) with manual approval enabled for safety
-    agent.run_live_session(days=30, require_approval=True)
+    # and debug logging enabled to see VAL/VAH levels
+    agent.run_live_session(days=30, require_approval=True, enable_debug=True)
