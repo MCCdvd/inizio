@@ -327,6 +327,10 @@ class TradingEnvironmentWithVolumeProfile:
                 })
                 # No flat buy reward — let profitability drive the signal
                 reward -= fee / (self.initial_balance + 1e-8)
+                # Trade-frequency penalty: discourage excessive trading
+                total_trades = self.buy_count + self.sell_count
+                if total_trades > 50:
+                    reward -= 0.005 * (total_trades / 50)
                 self.hold_steps = 0  # reset hold counter on buy
                 self.buy_count += 1
         
@@ -374,7 +378,7 @@ class TradingEnvironmentWithVolumeProfile:
                 if self.hold_steps > 3 and self.entry_price:
                     price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
                     if price_growth < 0.01:
-                        reward -= 0.0025
+                        reward -= 0.005
         
         # advance
         self.current_step += 1
