@@ -105,3 +105,48 @@ def calculate_trade_metrics(trades: List[Dict]) -> Dict:
         'avg_loss': avg_loss,
         'profit_factor': profit_factor
     }
+
+
+def calculate_activity_metrics(trades: List[Dict], prices: np.ndarray, initial_balance: float) -> Dict:
+    """Calculate trade activity metrics: trades per day, max exposure, avg hold duration.
+
+    Args:
+        trades: list of trade dicts (each has 'type', 'step', 'shares', 'price')
+        prices: full price array from the environment
+        initial_balance: initial portfolio value (used to compute exposure %)
+    """
+    if not trades or len(prices) == 0:
+        return {
+            'trades_per_day': 0.0,
+            'max_exposure_pct': 0.0,
+            'avg_hold_days': 0.0,
+        }
+
+    total_days = max(len(prices), 1)
+    trades_per_day = len(trades) / total_days
+
+    # Max exposure: highest (shares * price) relative to initial_balance
+    max_exposure = 0.0
+    for t in trades:
+        exposure = float(t.get('shares', 0)) * float(t.get('price', 0))
+        if exposure > max_exposure:
+            max_exposure = exposure
+    max_exposure_pct = (max_exposure / (initial_balance + 1e-8)) * 100.0
+
+    # Avg hold duration: match each BUY to the next SELL by step order
+    hold_durations = []
+    buy_step = None
+    for t in trades:
+        if t['type'] == 'BUY':
+            buy_step = int(t['step'])
+        elif t['type'] == 'SELL' and buy_step is not None:
+            hold_durations.append(int(t['step']) - buy_step)
+            buy_step = None
+
+    avg_hold_days = float(np.mean(hold_durations)) if hold_durations else 0.0
+
+    return {
+        'trades_per_day': round(trades_per_day, 4),
+        'max_exposure_pct': round(max_exposure_pct, 2),
+        'avg_hold_days': round(avg_hold_days, 2),
+    }

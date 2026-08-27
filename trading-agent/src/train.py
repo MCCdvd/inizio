@@ -17,6 +17,7 @@ from utils import (
     calculate_sharpe_ratio,
     calculate_sortino_ratio,
     calculate_trade_metrics,
+    calculate_activity_metrics,
 )
 import argparse
 import logging
@@ -32,6 +33,7 @@ def _build_summary(algorithm: str, stock_symbol: str, env, episode_rewards: list
     sortino = calculate_sortino_ratio(env.returns_history)
     max_dd = calculate_max_drawdown(env.portfolio_history)
     trade_metrics = calculate_trade_metrics(env.trades)
+    activity_metrics = calculate_activity_metrics(env.trades, env.prices, env.initial_balance)
     total_fees = sum(float(t.get('fee', 0.0)) for t in env.trades)
     return {
         'algorithm': algorithm,
@@ -45,6 +47,7 @@ def _build_summary(algorithm: str, stock_symbol: str, env, episode_rewards: list
         'total_trades': len(env.trades),
         'total_fees_paid': total_fees,
         'trade_metrics': trade_metrics,
+        'activity_metrics': activity_metrics,
         'episode_rewards': [float(r) for r in episode_rewards],
         'episode_portfolios': [float(p) for p in episode_portfolios],
         'trades': env.trades,
