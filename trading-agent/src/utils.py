@@ -107,13 +107,14 @@ def calculate_trade_metrics(trades: List[Dict]) -> Dict:
     }
 
 
-def calculate_activity_metrics(trades: List[Dict], prices: np.ndarray, initial_balance: float) -> Dict:
+def calculate_activity_metrics(trades: List[Dict], prices: np.ndarray, initial_balance: float, portfolio_history: List[float] = None) -> Dict:
     """Calculate trade activity metrics: trades per day, max exposure, avg hold duration.
 
     Args:
         trades: list of trade dicts (each has 'type', 'step', 'shares', 'price')
         prices: full price array from the environment
         initial_balance: initial portfolio value (used to compute exposure %)
+        portfolio_history: portfolio value at each step (used to compute exposure vs current portfolio)
     """
     if not trades or len(prices) == 0:
         return {
@@ -125,13 +126,21 @@ def calculate_activity_metrics(trades: List[Dict], prices: np.ndarray, initial_b
     total_days = max(len(prices), 1)
     trades_per_day = len(trades) / total_days
 
-    # Max exposure: highest (shares * price) relative to initial_balance
-    max_exposure = 0.0
+    # Max exposure: highest (shares * price) relative to the portfolio value at that step.
+    # Using initial_balance as fallback when portfolio_history is unavailable.
+    max_exposure_pct = 0.0
     for t in trades:
+        if t['type'] != 'BUY':
+            continue
         exposure = float(t.get('shares', 0)) * float(t.get('price', 0))
-        if exposure > max_exposure:
-            max_exposure = exposure
-    max_exposure_pct = (max_exposure / (initial_balance + 1e-8)) * 100.0
+        step = int(t.get('step', 0))
+        if portfolio_history and step < len(portfolio_history):
+            portfolio_at_step = float(portfolio_history[step]) or initial_balance
+        else:
+            portfolio_at_step = initial_balance
+        pct = (exposure / (portfolio_at_step + 1e-8)) * 100.0
+        if pct > max_exposure_pct:
+            max_exposure_pct = pct
 
     # Avg hold duration: match each BUY to the next SELL by step order
     hold_durations = []

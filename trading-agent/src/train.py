@@ -33,7 +33,7 @@ def _build_summary(algorithm: str, stock_symbol: str, env, episode_rewards: list
     sortino = calculate_sortino_ratio(env.returns_history)
     max_dd = calculate_max_drawdown(env.portfolio_history)
     trade_metrics = calculate_trade_metrics(env.trades)
-    activity_metrics = calculate_activity_metrics(env.trades, env.prices, env.initial_balance)
+    activity_metrics = calculate_activity_metrics(env.trades, env.prices, env.initial_balance, portfolio_history=env.portfolio_history)
     total_fees = sum(float(t.get('fee', 0.0)) for t in env.trades)
     return {
         'algorithm': algorithm,
