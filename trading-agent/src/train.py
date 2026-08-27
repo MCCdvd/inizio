@@ -93,11 +93,11 @@ def export_results(summary: dict, output_dir: str) -> None:
     logger.info('Saved summary JSON to %s', json_path)
 
 
-def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None):
+def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
     """Train DQN agent"""
     logger.info(f"Training DQN Agent on {stock_symbol}")
     
-    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed)
+    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed, flat_fee=flat_fee)
     agent = DQNAgent(state_size=6, action_size=3, seed=seed)
     
     end_date = datetime.now()
@@ -161,11 +161,11 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None):
+def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
     """Train PPO agent"""
     logger.info(f"Training PPO Agent on {stock_symbol}")
     
-    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed)
+    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed, flat_fee=flat_fee)
     agent = PPOAgent(state_size=6, action_size=3, seed=seed)
     
     end_date = datetime.now()
@@ -235,11 +235,11 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None):
+def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
     """Train A3C agent"""
     logger.info(f"Training A3C Agent on {stock_symbol}")
     
-    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed)
+    env = TradingEnvironmentWithVolumeProfile(stock_symbol, initial_balance=10000, lookback_days=30, seed=seed, flat_fee=flat_fee)
     agent = A3CAgent(state_size=6, action_size=3, seed=seed)
     
     end_date = datetime.now()
@@ -301,7 +301,7 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None, output_dir: str = None, save_model_path: str = None):
+def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
     """Train adaptive strategy selector with runtime strategy switching."""
     if episodes <= 0:
         raise ValueError("episodes must be > 0")
@@ -312,6 +312,7 @@ def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: i
         stock_symbol,
         initial_balance=10000,
         transaction_cost=0.001,
+        flat_fee=flat_fee,
         lookback_days=30,
         seed=seed,
     )
@@ -421,26 +422,27 @@ if __name__ == "__main__":
     parser.add_argument('--compare', action='store_true', help='Compare multiple stocks')
     parser.add_argument('--output-dir', type=str, default=None, help='Directory to save results (trades.csv, episode_summary.csv, summary.json)')
     parser.add_argument('--save-model', type=str, default=None, help='Path to save trained model weights (e.g. output/model.pt)')
+    parser.add_argument('--flat-fee', type=float, default=10.0, help='Flat fee in $ per trade (buy and sell). Default 10.0')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
     if args.algorithm == 'dqn':
-        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model)
+        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model, flat_fee=args.flat_fee)
     elif args.algorithm == 'ppo':
-        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model)
+        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model, flat_fee=args.flat_fee)
     elif args.algorithm == 'a3c':
-        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model)
+        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model, flat_fee=args.flat_fee)
     elif args.algorithm == 'adaptive':
-        train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
+        train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, flat_fee=args.flat_fee)
     elif args.algorithm == 'all':
-        dqn_result = train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+        dqn_result = train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, flat_fee=args.flat_fee,
                                      output_dir=str(Path(args.output_dir) / 'dqn') if args.output_dir else None)
-        ppo_result = train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+        ppo_result = train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, flat_fee=args.flat_fee,
                                      output_dir=str(Path(args.output_dir) / 'ppo') if args.output_dir else None)
-        a3c_result = train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+        a3c_result = train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, flat_fee=args.flat_fee,
                                      output_dir=str(Path(args.output_dir) / 'a3c') if args.output_dir else None)
-        adaptive_result = train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+        adaptive_result = train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, flat_fee=args.flat_fee,
                                                output_dir=str(Path(args.output_dir) / 'adaptive') if args.output_dir else None)
 
         results = {
