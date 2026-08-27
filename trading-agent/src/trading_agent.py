@@ -118,6 +118,8 @@ class TradingEnvironmentWithVolumeProfile:
         self.shares_held = 0
         self.entry_price: Optional[float] = None
         self.hold_steps: int = 0
+        self.buy_count: int = 0
+        self.sell_count: int = 0
         self.trades = []
         self.current_step = 0
         self.prices: np.ndarray = np.array([])
@@ -231,6 +233,8 @@ class TradingEnvironmentWithVolumeProfile:
         self.shares_held = 0
         self.entry_price = None
         self.hold_steps = 0
+        self.buy_count = 0
+        self.sell_count = 0
         self.trades = []
         self.portfolio_history = [float(self.initial_balance)]
         self.returns_history = []
@@ -321,6 +325,7 @@ class TradingEnvironmentWithVolumeProfile:
                 })
                 reward += 0.1 - (fee / (self.initial_balance + 1e-8))
                 self.hold_steps = 0  # reset hold counter on buy
+                self.buy_count += 1
         
         elif action == 2:  # Sell
             if self.shares_held > 0:
@@ -351,9 +356,19 @@ class TradingEnvironmentWithVolumeProfile:
                 })
                 
                 reward += profit_pct + sell_incentive
+                # Round-trip completion bonus: reward profitable exits
+                if profit_pct > 0:
+                    reward += profit_pct * 2.0
+                self.sell_count += 1
                 self.shares_held = 0
                 self.entry_price = None
                 self.hold_steps = 0  # reset hold counter on sell
+                # Sell-frequency regularizer: penalise when sell ratio < 25%
+                total_trades = self.buy_count + self.sell_count
+                if total_trades >= 4:
+                    sell_ratio = self.sell_count / total_trades
+                    if sell_ratio < 0.25:
+                        reward -= 0.01 * (0.25 - sell_ratio)
         
         else:  # Hold (action == 0)
             if self.shares_held > 0:
@@ -362,7 +377,7 @@ class TradingEnvironmentWithVolumeProfile:
                 if self.hold_steps > 3 and self.entry_price:
                     price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
                     if price_growth < 0.01:
-                        reward -= 0.005
+                        reward -= 0.01
         
         # advance
         self.current_step += 1
