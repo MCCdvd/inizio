@@ -55,7 +55,46 @@ def _build_summary(algorithm: str, stock_symbol: str, env, episode_rewards: list
     }
 
 
-def export_results(summary: dict, output_dir: str) -> None:
+def _early_stop_check(
+    episode_portfolios: list,
+    initial_balance: float,
+    window: int = 50,
+    patience: int = 30,
+    min_episodes: int = 100,
+) -> bool:
+    """Return True when training should stop early.
+
+    Stops when the rolling Sharpe over the last *window* episodes has been
+    declining for *patience* consecutive episodes and at least *min_episodes*
+    have been completed.  Uses period returns derived from episode portfolio
+    values.
+    """
+    n = len(episode_portfolios)
+    if n < min_episodes + window:
+        return False
+
+    def _rolling_sharpe(portfolios):
+        if len(portfolios) < 2:
+            return 0.0
+        returns = [
+            (portfolios[i] - portfolios[i - 1]) / (portfolios[i - 1] + 1e-8)
+            for i in range(1, len(portfolios))
+        ]
+        mean_r = float(np.mean(returns))
+        std_r = float(np.std(returns)) + 1e-8
+        return mean_r / std_r * (252 ** 0.5)
+
+    current_sharpe = _rolling_sharpe(episode_portfolios[-window:])
+    prev_sharpe = _rolling_sharpe(episode_portfolios[-window - patience: -patience])
+    if current_sharpe < prev_sharpe:
+        logger.info(
+            'Early stop: rolling Sharpe dropped %.3f → %.3f over last %d episodes',
+            prev_sharpe,
+            current_sharpe,
+            patience,
+        )
+        return True
+    return False
     """Write per-trade CSV, episode CSV and JSON summary to *output_dir*."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -93,7 +132,7 @@ def export_results(summary: dict, output_dir: str) -> None:
     logger.info('Saved summary JSON to %s', json_path)
 
 
-def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
+def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 4.0):
     """Train DQN agent"""
     logger.info(f"Training DQN Agent on {stock_symbol}")
     
@@ -134,6 +173,10 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         
         if (episode + 1) % 10 == 0:
             logger.info(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}% | Epsilon: {agent.epsilon:.3f}")
+
+        if _early_stop_check(episode_portfolios, env.initial_balance):
+            logger.info('Early stopping at episode %d', episode + 1)
+            break
     
     logger.info("Training completed!")
     logger.info(f"Final Portfolio: ${portfolio_value:,.2f}")
@@ -161,7 +204,7 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
+def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 4.0):
     """Train PPO agent"""
     logger.info(f"Training PPO Agent on {stock_symbol}")
     
@@ -208,6 +251,10 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         
         if (episode + 1) % 10 == 0:
             logger.info(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}%")
+
+        if _early_stop_check(episode_portfolios, env.initial_balance):
+            logger.info('Early stopping at episode %d', episode + 1)
+            break
     
     logger.info("Training completed!")
     logger.info(f"Final Portfolio: ${portfolio_value:,.2f}")
@@ -235,7 +282,7 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
+def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 4.0):
     """Train A3C agent"""
     logger.info(f"Training A3C Agent on {stock_symbol}")
     
@@ -274,6 +321,10 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         
         if (episode + 1) % 10 == 0:
             logger.info(f"Episode: {episode+1}/{episodes} | Portfolio: ${portfolio_value:,.2f} | Return: {final_return:+.2f}%")
+
+        if _early_stop_check(episode_portfolios, env.initial_balance):
+            logger.info('Early stopping at episode %d', episode + 1)
+            break
     
     logger.info("Training completed!")
     logger.info(f"Final Portfolio: ${portfolio_value:,.2f}")
@@ -301,7 +352,7 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 10.0):
+def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None, output_dir: str = None, save_model_path: str = None, flat_fee: float = 4.0):
     """Train adaptive strategy selector with runtime strategy switching."""
     if episodes <= 0:
         raise ValueError("episodes must be > 0")
@@ -422,7 +473,7 @@ if __name__ == "__main__":
     parser.add_argument('--compare', action='store_true', help='Compare multiple stocks')
     parser.add_argument('--output-dir', type=str, default=None, help='Directory to save results (trades.csv, episode_summary.csv, summary.json)')
     parser.add_argument('--save-model', type=str, default=None, help='Path to save trained model weights (e.g. output/model.pt)')
-    parser.add_argument('--flat-fee', type=float, default=10.0, help='Flat fee in $ per trade (buy and sell). Default 10.0')
+    parser.add_argument('--flat-fee', type=float, default=4.0, help='Flat fee in $ per trade (buy and sell). Default 4.0')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
