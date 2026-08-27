@@ -102,6 +102,7 @@ class TradingEnvironmentWithVolumeProfile:
         self,
         stock_symbol: str,
         initial_balance: float = 10000,
+        transaction_cost: float = 0.0,
         lookback_days: int = 30,
         seed: Optional[int] = None,
         data_source: str = "yahoo",
@@ -112,6 +113,7 @@ class TradingEnvironmentWithVolumeProfile:
     ):
         self.stock_symbol = stock_symbol
         self.initial_balance = float(initial_balance)
+        self.transaction_cost = max(0.0, float(transaction_cost))
         self.balance = float(initial_balance)
         self.shares_held = 0
         self.entry_price: Optional[float] = None
@@ -121,6 +123,8 @@ class TradingEnvironmentWithVolumeProfile:
         self.volumes: np.ndarray = np.array([])
         self.lookback_days = int(lookback_days)
         self.seed = seed
+        self.portfolio_history: List[float] = []
+        self.returns_history: List[float] = []
 
         self.data_source = str(data_source).lower()
         self.ibkr_host = ibkr_host
@@ -226,12 +230,24 @@ class TradingEnvironmentWithVolumeProfile:
         self.shares_held = 0
         self.entry_price = None
         self.trades = []
+        self.portfolio_history = [float(self.initial_balance)]
+        self.returns_history = []
         # Start at lookback_days or last available index if less data
         if len(self.prices) > 0:
             self.current_step = int(min(self.lookback_days, max(0, len(self.prices) - 1)))
         else:
             self.current_step = 0
         return self._get_state()
+
+    def get_portfolio_value(self, price: Optional[float] = None) -> float:
+        """Return current mark-to-market portfolio value."""
+        if price is None:
+            if len(self.prices) == 0:
+                price = 0.0
+            else:
+                idx = int(min(max(self.current_step, 0), len(self.prices) - 1))
+                price = float(self.prices[idx])
+        return float(self.balance + (self.shares_held * float(price)))
     
     def _get_state(self) -> np.ndarray:
         """Get current state vector"""
@@ -277,7 +293,7 @@ class TradingEnvironmentWithVolumeProfile:
         reward = -0.01
         
         if action == 1:  # Buy
-            max_shares = int(self.balance / (current_price + 1e-8))
+            max_shares = int(self.balance / (current_price * (1 + self.transaction_cost) + 1e-8))
             if max_shares > 0:
                 distance_to_val = abs(current_price - self.val) / (self.val + 1e-8) if self.val != 0 else 1
                 buy_incentive = max(0, 0.05 - distance_to_val)
@@ -286,7 +302,8 @@ class TradingEnvironmentWithVolumeProfile:
                 shares_to_buy = min(shares_to_buy, max_shares)
                 
                 cost = shares_to_buy * current_price
-                self.balance -= cost
+                fee = cost * self.transaction_cost
+                self.balance -= (cost + fee)
                 self.shares_held += shares_to_buy
                 self.entry_price = current_price
                 
@@ -295,19 +312,21 @@ class TradingEnvironmentWithVolumeProfile:
                     'step': self.current_step,
                     'price': current_price,
                     'shares': shares_to_buy,
+                    'fee': float(fee),
                     'poc': self.poc,
                     'val': self.val,
                     'vah': self.vah
                 })
-                reward += 0.1
+                reward += 0.1 - (fee / (self.initial_balance + 1e-8))
         
         elif action == 2:  # Sell
             if self.shares_held > 0:
                 revenue = self.shares_held * current_price
-                self.balance += revenue
+                fee = revenue * self.transaction_cost
+                self.balance += revenue - fee
                 
                 if self.entry_price:
-                    profit = revenue - (self.entry_price * self.shares_held)
+                    profit = (revenue - fee) - (self.entry_price * self.shares_held)
                     profit_pct = profit / (self.entry_price * self.shares_held + 1e-8)
                 else:
                     profit = 0
@@ -321,6 +340,7 @@ class TradingEnvironmentWithVolumeProfile:
                     'step': self.current_step,
                     'price': current_price,
                     'shares': self.shares_held,
+                    'fee': float(fee),
                     'profit_pct': profit_pct,
                     'poc': self.poc,
                     'val': self.val,
@@ -338,12 +358,17 @@ class TradingEnvironmentWithVolumeProfile:
         if done and self.shares_held > 0:
             final_idx = min(self.current_step - 1, len(self.prices) - 1)
             final_price = float(self.prices[final_idx])
-            self.balance += self.shares_held * final_price
+            liquidation_value = self.shares_held * final_price
+            self.balance += liquidation_value - (liquidation_value * self.transaction_cost)
             self.shares_held = 0
         
         next_idx = min(self.current_step, len(self.prices) - 1)
         next_price = float(self.prices[next_idx])
-        portfolio_value = self.balance + (self.shares_held * next_price)
+        portfolio_value = self.get_portfolio_value(next_price)
+        previous_value = self.portfolio_history[-1] if self.portfolio_history else float(self.initial_balance)
+        period_return = (portfolio_value - previous_value) / (previous_value + 1e-8)
+        self.portfolio_history.append(float(portfolio_value))
+        self.returns_history.append(float(period_return))
         reward += (portfolio_value - self.initial_balance) / (self.initial_balance + 1e-8) * 0.1
         
         return self._get_state(), float(reward), done

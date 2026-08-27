@@ -5,6 +5,7 @@ __author__ = "MCCdvd"
 
 from .trading_agent import TradingEnvironmentWithVolumeProfile, VolumeProfileAnalyzer
 from .agents import DQNAgent, PPOAgent, A3CAgent
+from .strategy_selector import AdaptiveStrategySelector, MarketRegimeFeatureExtractor
 from .visualization import VolumeProfileVisualizer
 
 __all__ = [
@@ -13,5 +14,7 @@ __all__ = [
     'DQNAgent',
     'PPOAgent',
     'A3CAgent',
+    'AdaptiveStrategySelector',
+    'MarketRegimeFeatureExtractor',
     'VolumeProfileVisualizer',
 ]

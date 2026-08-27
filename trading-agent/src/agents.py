@@ -203,6 +203,8 @@ class PPOAgent(BaseAgent):
         self.episode_actions: List = []
         self.episode_rewards: List = []
         self.episode_values: List = []
+        self.episode_log_probs: List = []
+        self._last_log_prob: float = float(-np.log(max(self.action_size, 1)))
 
         if _HAS_TORCH:
             class Actor(nn.Module):
@@ -252,15 +254,21 @@ class PPOAgent(BaseAgent):
             self.actor.eval()
             s = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
             with torch.no_grad():
-                probs = self.actor(s).cpu().numpy()[0]
-            action = int(np.random.choice(self.action_size, p=probs))
+                probs_t = self.actor(s)
+                dist = torch.distributions.Categorical(probs_t)
+                action_t = dist.sample()
+                self._last_log_prob = float(dist.log_prob(action_t).item())
+                probs = probs_t.cpu().numpy()[0]
+            action = int(action_t.item())
             return action
 
         if _HAS_TF and self.actor is not None:
             policy = self.actor.predict(state.reshape(1, -1), verbose=0)[0]
             action = int(np.random.choice(self.action_size, p=policy))
+            self._last_log_prob = float(np.log(max(policy[action], 1e-8)))
             return action
 
+        self._last_log_prob = float(-np.log(max(self.action_size, 1)))
         return random.randrange(self.action_size)
 
     def store_transition(self, state, action, reward, value=0):
@@ -268,6 +276,7 @@ class PPOAgent(BaseAgent):
         self.episode_actions.append(action)
         self.episode_rewards.append(reward)
         self.episode_values.append(value)
+        self.episode_log_probs.append(self._last_log_prob)
 
     def _compute_returns(self, rewards):
         returns = np.zeros_like(rewards, dtype=np.float32)
@@ -286,6 +295,7 @@ class PPOAgent(BaseAgent):
             actions = torch.tensor(np.array(self.episode_actions), dtype=torch.int64, device=self.device)
             rewards = np.array(self.episode_rewards)
             returns = torch.tensor(self._compute_returns(rewards), dtype=torch.float32, device=self.device)
+            old_log_probs = torch.tensor(np.array(self.episode_log_probs), dtype=torch.float32, device=self.device)
 
             values = self.critic(states).squeeze(-1)
             advantages = returns - values.detach()
@@ -298,7 +308,7 @@ class PPOAgent(BaseAgent):
                 log_probs = dist.log_prob(actions)
 
                 # Actor loss (surrogate)
-                ratio = torch.exp(log_probs - log_probs.detach())
+                ratio = torch.exp(log_probs - old_log_probs)
                 surrogate1 = ratio * advantages
                 surrogate2 = torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * advantages
                 actor_loss = -torch.min(surrogate1, surrogate2).mean()
@@ -321,6 +331,7 @@ class PPOAgent(BaseAgent):
         self.episode_actions.clear()
         self.episode_rewards.clear()
         self.episode_values.clear()
+        self.episode_log_probs.clear()
 
 
 class A3CAgent(BaseAgent):

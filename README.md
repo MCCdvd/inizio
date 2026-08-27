@@ -14,6 +14,7 @@ Advanced reinforcement learning trading agent using volume profile analysis to d
 - **DQN** (Deep Q-Network) - Value-based learning with experience replay
 - **PPO** (Proximal Policy Optimization) - Policy gradient with clipping
 - **A3C** (Asynchronous Advantage Actor-Critic) - Parallel actor-critic learning
+- **Adaptive Selector** - Meta-strategy that routes between RL and deterministic policies by market regime
 
 ✅ **Interactive Visualization**
 - Volume profile distribution with price action
@@ -85,6 +86,12 @@ python src/train.py --algorithm a3c --stock AAPL --episodes 50
 python src/train.py --algorithm all --stock AAPL --episodes 50 --compare
 ```
 
+### Train Adaptive Selector
+
+```bash
+python src/train.py --algorithm adaptive --stock AAPL --episodes 20
+```
+
 ### Train on Multiple Stocks
 
 ```bash
@@ -97,6 +104,12 @@ python src/train.py --algorithm dqn --stock GOOGL --episodes 50
 
 ```bash
 python src/backtest.py --stock AAPL --algorithm dqn --start-date 2023-01-01 --end-date 2024-01-01
+```
+
+### Run Adaptive Backtesting
+
+```bash
+python src/backtest.py --symbol AAPL --algorithm adaptive --start-date 2023-01-01 --end-date 2024-01-01
 ```
 
 ## 🏗️ Architecture
@@ -151,6 +164,8 @@ Reward = Base Reward
 | **Parallel Training** | No | No | Yes |
 | **Memory Usage** | High (replay buffer) | Low | Moderate |
 | **Best For** | Discrete actions | Continuous learning | Real-time adaptation |
+
+The adaptive selector uses market-regime features such as volatility, trend strength, momentum, relative volume, RSI, Bollinger width, and volume-profile distances to choose among DQN, PPO, A3C, deterministic volume-profile execution, and a defensive cash policy.
 
 ## 📊 Training Results Example
 
