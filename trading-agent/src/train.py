@@ -1,20 +1,95 @@
 """
 Training script for trading agent with multiple algorithms
 """
+import csv
+import json
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+from pathlib import Path
 from trading_agent import TradingEnvironmentWithVolumeProfile
 from agents import DQNAgent, PPOAgent, A3CAgent
 from strategy_selector import AdaptiveStrategySelector
 from visualization import VolumeProfileVisualizer
+from utils import (
+    calculate_max_drawdown,
+    calculate_sharpe_ratio,
+    calculate_sortino_ratio,
+    calculate_trade_metrics,
+)
 import argparse
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None):
+def _build_summary(algorithm: str, stock_symbol: str, env, episode_rewards: list, episode_portfolios: list) -> dict:
+    """Compute training summary metrics from a completed training run."""
+    final_portfolio = float(episode_portfolios[-1]) if episode_portfolios else env.initial_balance
+    final_return = float(((final_portfolio - env.initial_balance) / (env.initial_balance + 1e-8)) * 100)
+    sharpe = calculate_sharpe_ratio(env.returns_history)
+    sortino = calculate_sortino_ratio(env.returns_history)
+    max_dd = calculate_max_drawdown(env.portfolio_history)
+    trade_metrics = calculate_trade_metrics(env.trades)
+    total_fees = sum(float(t.get('fee', 0.0)) for t in env.trades)
+    return {
+        'algorithm': algorithm,
+        'symbol': stock_symbol,
+        'initial_capital': float(env.initial_balance),
+        'final_portfolio': final_portfolio,
+        'total_return_pct': final_return,
+        'sharpe_ratio': float(sharpe) if math.isfinite(sharpe) else 0.0,
+        'sortino_ratio': float(sortino) if math.isfinite(sortino) else 0.0,
+        'max_drawdown': float(max_dd),
+        'total_trades': len(env.trades),
+        'total_fees_paid': total_fees,
+        'trade_metrics': trade_metrics,
+        'episode_rewards': [float(r) for r in episode_rewards],
+        'episode_portfolios': [float(p) for p in episode_portfolios],
+        'trades': env.trades,
+        'portfolio_history': [float(v) for v in env.portfolio_history],
+    }
+
+
+def export_results(summary: dict, output_dir: str) -> None:
+    """Write per-trade CSV, episode CSV and JSON summary to *output_dir*."""
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # --- trades.csv ---
+    trades_path = out / 'trades.csv'
+    fieldnames = ['step', 'type', 'price', 'shares', 'profit_pct', 'fee']
+    with open(trades_path, 'w', newline='', encoding='utf-8') as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for trade in summary.get('trades', []):
+            row = {k: trade.get(k, '') for k in fieldnames}
+            writer.writerow(row)
+    logger.info('Saved trades CSV to %s', trades_path)
+
+    # --- episode_summary.csv ---
+    episodes_path = out / 'episode_summary.csv'
+    rewards = summary.get('episode_rewards', [])
+    portfolios = summary.get('episode_portfolios', [])
+    with open(episodes_path, 'w', newline='', encoding='utf-8') as fh:
+        writer = csv.writer(fh)
+        writer.writerow(['episode', 'total_reward', 'portfolio_value', 'return_pct'])
+        initial = summary.get('initial_capital', 10000)
+        for i, (reward, portfolio) in enumerate(zip(rewards, portfolios), 1):
+            ret = ((portfolio - initial) / (initial + 1e-8)) * 100
+            writer.writerow([i, round(float(reward), 6), round(float(portfolio), 2), round(float(ret), 4)])
+    logger.info('Saved episode summary CSV to %s', episodes_path)
+
+    # --- summary.json ---
+    json_path = out / 'summary.json'
+    export = {k: v for k, v in summary.items() if k not in ('trades', 'portfolio_history')}
+    with open(json_path, 'w', encoding='utf-8') as fh:
+        json.dump(export, fh, indent=2, default=float)
+    logger.info('Saved summary JSON to %s', json_path)
+
+
+def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None):
     """Train DQN agent"""
     logger.info(f"Training DQN Agent on {stock_symbol}")
     
@@ -65,17 +140,22 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
                                                trades=env.trades, title=f"DQN Agent - {stock_symbol}")
     VolumeProfileVisualizer.plot_training_results(episode_rewards, episode_portfolios, title=f"DQN Training - {stock_symbol}")
     plt.show()
-    
+
+    summary = _build_summary('dqn', stock_symbol, env, episode_rewards, episode_portfolios)
+    if output_dir:
+        export_results(summary, output_dir)
+
     return {
         'agent': agent,
         'env': env,
         'final_portfolio': portfolio_value,
         'trades': env.trades,
-        'return_pct': final_return
+        'return_pct': final_return,
+        'summary': summary,
     }
 
 
-def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None):
+def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None):
     """Train PPO agent"""
     logger.info(f"Training PPO Agent on {stock_symbol}")
     
@@ -132,17 +212,22 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
                                                trades=env.trades, title=f"PPO Agent - {stock_symbol}")
     VolumeProfileVisualizer.plot_training_results(episode_rewards, episode_portfolios, title=f"PPO Training - {stock_symbol}")
     plt.show()
-    
+
+    summary = _build_summary('ppo', stock_symbol, env, episode_rewards, episode_portfolios)
+    if output_dir:
+        export_results(summary, output_dir)
+
     return {
         'agent': agent,
         'env': env,
         'final_portfolio': portfolio_value,
         'trades': env.trades,
-        'return_pct': final_return
+        'return_pct': final_return,
+        'summary': summary,
     }
 
 
-def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None):
+def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None):
     """Train A3C agent"""
     logger.info(f"Training A3C Agent on {stock_symbol}")
     
@@ -191,17 +276,22 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
                                                trades=env.trades, title=f"A3C Agent - {stock_symbol}")
     VolumeProfileVisualizer.plot_training_results(episode_rewards, episode_portfolios, title=f"A3C Training - {stock_symbol}")
     plt.show()
-    
+
+    summary = _build_summary('a3c', stock_symbol, env, episode_rewards, episode_portfolios)
+    if output_dir:
+        export_results(summary, output_dir)
+
     return {
         'agent': agent,
         'env': env,
         'final_portfolio': portfolio_value,
         'trades': env.trades,
-        'return_pct': final_return
+        'return_pct': final_return,
+        'summary': summary,
     }
 
 
-def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None):
+def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None, output_dir: str = None):
     """Train adaptive strategy selector with runtime strategy switching."""
     if episodes <= 0:
         raise ValueError("episodes must be > 0")
@@ -297,6 +387,10 @@ def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: i
     )
     plt.show()
 
+    summary = _build_summary('adaptive', stock_symbol, env, episode_rewards, episode_portfolios)
+    if output_dir:
+        export_results(summary, output_dir)
+
     return {
         'selector': selector,
         'strategies': runtime_strategies,
@@ -304,6 +398,7 @@ def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: i
         'final_portfolio': portfolio_value,
         'trades': env.trades,
         'return_pct': final_return,
+        'summary': summary,
     }
 
 
@@ -314,24 +409,29 @@ if __name__ == "__main__":
     parser.add_argument('--episodes', type=int, default=50, help='Number of training episodes')
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
     parser.add_argument('--compare', action='store_true', help='Compare multiple stocks')
-    
+    parser.add_argument('--output-dir', type=str, default=None, help='Directory to save results (trades.csv, episode_summary.csv, summary.json)')
+
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    
+
     if args.algorithm == 'dqn':
-        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
+        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
     elif args.algorithm == 'ppo':
-        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
+        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
     elif args.algorithm == 'a3c':
-        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
+        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
     elif args.algorithm == 'adaptive':
-        train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
+        train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
     elif args.algorithm == 'all':
-        dqn_result = train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
-        ppo_result = train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
-        a3c_result = train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
-        adaptive_result = train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed)
-        
+        dqn_result = train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+                                     output_dir=str(Path(args.output_dir) / 'dqn') if args.output_dir else None)
+        ppo_result = train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+                                     output_dir=str(Path(args.output_dir) / 'ppo') if args.output_dir else None)
+        a3c_result = train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+                                     output_dir=str(Path(args.output_dir) / 'a3c') if args.output_dir else None)
+        adaptive_result = train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed,
+                                               output_dir=str(Path(args.output_dir) / 'adaptive') if args.output_dir else None)
+
         results = {
             'DQN': dqn_result,
             'PPO': ppo_result,
