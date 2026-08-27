@@ -68,7 +68,7 @@ class DQNAgent(BaseAgent):
         super().__init__(state_size, action_size, learning_rate, seed)
         self.epsilon = 1.0
         self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
+        self.epsilon_decay = 0.97
         self.gamma = 0.95
         self.memory = deque(maxlen=2000)
         self.batch_size = 32
