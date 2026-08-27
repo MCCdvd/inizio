@@ -83,7 +83,8 @@ def export_results(summary: dict, output_dir: str) -> None:
 
     # --- summary.json ---
     json_path = out / 'summary.json'
-    export = {k: v for k, v in summary.items() if k not in ('trades', 'portfolio_history')}
+    export = {k: v for k, v in summary.items()
+              if k not in ('trades', 'portfolio_history', 'episode_rewards', 'episode_portfolios')}
     with open(json_path, 'w', encoding='utf-8') as fh:
         json.dump(export, fh, indent=2, default=float)
     logger.info('Saved summary JSON to %s', json_path)
