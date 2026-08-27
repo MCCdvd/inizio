@@ -279,7 +279,7 @@ class AdaptiveStrategySelector:
 
         done = False
         while not done:
-            if isinstance(strategy, (DQNAgent, PPOAgent, A3CAgent)):
+            if strategy_name in ('dqn', 'ppo', 'a3c'):
                 action = strategy.act(state)
             else:
                 action = strategy.act(env, state)
@@ -415,7 +415,7 @@ class AdaptiveStrategySelector:
     def act(self, env: TradingEnvironmentWithVolumeProfile, state: np.ndarray, runtime_strategies: Dict[str, object]) -> Tuple[int, str, float, Dict[str, float]]:
         strategy_name, confidence, scores = self.select_strategy(env)
         strategy = runtime_strategies[strategy_name]
-        if isinstance(strategy, (DQNAgent, PPOAgent, A3CAgent)):
+        if strategy_name in ('dqn', 'ppo', 'a3c'):
             action = strategy.act(state)
         else:
             action = strategy.act(env, state)
