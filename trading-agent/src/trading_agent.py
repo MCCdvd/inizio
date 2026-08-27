@@ -362,7 +362,7 @@ class TradingEnvironmentWithVolumeProfile:
                 if self.hold_steps > 3 and self.entry_price:
                     price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
                     if price_growth < 0.01:
-                        reward -= 0.05
+                        reward -= 0.005
         
         # advance
         self.current_step += 1
