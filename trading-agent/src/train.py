@@ -59,8 +59,8 @@ def _early_stop_check(
     episode_portfolios: list,
     initial_balance: float,
     window: int = 50,
-    patience: int = 30,
-    min_episodes: int = 100,
+    patience: int = 50,
+    min_episodes: int = 200,
 ) -> bool:
     """Return True when training should stop early.
 
@@ -95,6 +95,9 @@ def _early_stop_check(
         )
         return True
     return False
+
+
+def export_results(summary: dict, output_dir: str) -> None:
     """Write per-trade CSV, episode CSV and JSON summary to *output_dir*."""
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
