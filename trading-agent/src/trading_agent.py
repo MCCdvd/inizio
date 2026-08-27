@@ -358,7 +358,7 @@ class TradingEnvironmentWithVolumeProfile:
                 reward += profit_pct + sell_incentive
                 # Round-trip completion bonus: reward profitable exits
                 if profit_pct > 0:
-                    reward += profit_pct * 2.0
+                    reward += profit_pct * 0.5
                 self.sell_count += 1
                 self.shares_held = 0
                 self.entry_price = None
@@ -377,7 +377,7 @@ class TradingEnvironmentWithVolumeProfile:
                 if self.hold_steps > 3 and self.entry_price:
                     price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
                     if price_growth < 0.01:
-                        reward -= 0.01
+                        reward -= 0.005
         
         # advance
         self.current_step += 1
