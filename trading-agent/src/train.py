@@ -90,7 +90,7 @@ def export_results(summary: dict, output_dir: str) -> None:
     logger.info('Saved summary JSON to %s', json_path)
 
 
-def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None):
+def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None):
     """Train DQN agent"""
     logger.info(f"Training DQN Agent on {stock_symbol}")
     
@@ -145,6 +145,8 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     summary = _build_summary('dqn', stock_symbol, env, episode_rewards, episode_portfolios)
     if output_dir:
         export_results(summary, output_dir)
+    if save_model_path:
+        agent.save_model(save_model_path)
 
     return {
         'agent': agent,
@@ -156,7 +158,7 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None):
+def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None):
     """Train PPO agent"""
     logger.info(f"Training PPO Agent on {stock_symbol}")
     
@@ -217,6 +219,8 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     summary = _build_summary('ppo', stock_symbol, env, episode_rewards, episode_portfolios)
     if output_dir:
         export_results(summary, output_dir)
+    if save_model_path:
+        agent.save_model(save_model_path)
 
     return {
         'agent': agent,
@@ -228,7 +232,7 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None):
+def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = None, output_dir: str = None, save_model_path: str = None):
     """Train A3C agent"""
     logger.info(f"Training A3C Agent on {stock_symbol}")
     
@@ -281,6 +285,8 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     summary = _build_summary('a3c', stock_symbol, env, episode_rewards, episode_portfolios)
     if output_dir:
         export_results(summary, output_dir)
+    if save_model_path:
+        agent.save_model(save_model_path)
 
     return {
         'agent': agent,
@@ -292,7 +298,7 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     }
 
 
-def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None, output_dir: str = None):
+def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None, output_dir: str = None, save_model_path: str = None):
     """Train adaptive strategy selector with runtime strategy switching."""
     if episodes <= 0:
         raise ValueError("episodes must be > 0")
@@ -411,16 +417,17 @@ if __name__ == "__main__":
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
     parser.add_argument('--compare', action='store_true', help='Compare multiple stocks')
     parser.add_argument('--output-dir', type=str, default=None, help='Directory to save results (trades.csv, episode_summary.csv, summary.json)')
+    parser.add_argument('--save-model', type=str, default=None, help='Path to save trained model weights (e.g. output/model.pt)')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
     if args.algorithm == 'dqn':
-        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
+        train_dqn_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model)
     elif args.algorithm == 'ppo':
-        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
+        train_ppo_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model)
     elif args.algorithm == 'a3c':
-        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
+        train_a3c_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir, save_model_path=args.save_model)
     elif args.algorithm == 'adaptive':
         train_adaptive_agent(stock_symbol=args.stock, episodes=args.episodes, seed=args.seed, output_dir=args.output_dir)
     elif args.algorithm == 'all':

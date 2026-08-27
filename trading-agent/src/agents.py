@@ -1,11 +1,15 @@
 """
 Advanced RL Agents: DQN, PPO, A3C with TensorFlow fallback and PyTorch integration
 """
+import logging
 import numpy as np
 import random
 from collections import deque
+from pathlib import Path
 from typing import Tuple, List, Optional
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -38,6 +42,14 @@ class BaseAgent(ABC):
     @abstractmethod
     def train(self):
         pass
+
+    def save_model(self, path: str) -> None:
+        """Persist model weights to *path*. Subclasses with trainable weights must override."""
+        logger.warning('%s does not implement save_model(); nothing saved.', self.__class__.__name__)
+
+    def load_model(self, path: str) -> None:
+        """Load model weights from *path*. Subclasses with trainable weights must override."""
+        logger.warning('%s does not implement load_model(); nothing loaded.', self.__class__.__name__)
 
 
 # Try to detect PyTorch availability
@@ -189,6 +201,34 @@ class DQNAgent(BaseAgent):
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
+    def save_model(self, path: str) -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if _HAS_TORCH and hasattr(self, 'q_network'):
+            torch.save({'q_network': self.q_network.state_dict(), 'epsilon': self.epsilon}, str(p))
+            logger.info('DQNAgent model saved to %s', p)
+        elif not _HAS_TORCH and hasattr(self, 'model'):
+            self.model.save(str(p))
+            logger.info('DQNAgent TF model saved to %s', p)
+        else:
+            logger.warning('DQNAgent: no trainable model to save.')
+
+    def load_model(self, path: str) -> None:
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f'Model file not found: {p}')
+        if _HAS_TORCH and hasattr(self, 'q_network'):
+            checkpoint = torch.load(str(p), map_location=self.device)
+            self.q_network.load_state_dict(checkpoint['q_network'])
+            self.epsilon = float(checkpoint.get('epsilon', self.epsilon_min))
+            logger.info('DQNAgent model loaded from %s (epsilon=%.4f)', p, self.epsilon)
+        elif not _HAS_TORCH and hasattr(self, 'model'):
+            import tensorflow as _tf
+            self.model = _tf.keras.models.load_model(str(p))
+            logger.info('DQNAgent TF model loaded from %s', p)
+        else:
+            logger.warning('DQNAgent: no trainable model to load into.')
+
 
 class PPOAgent(BaseAgent):
     """Proximal Policy Optimization Agent with PyTorch if available, otherwise TensorFlow fallback."""
@@ -333,6 +373,27 @@ class PPOAgent(BaseAgent):
         self.episode_values.clear()
         self.episode_log_probs.clear()
 
+    def save_model(self, path: str) -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if _HAS_TORCH and hasattr(self, 'actor'):
+            torch.save({'actor': self.actor.state_dict(), 'critic': self.critic.state_dict()}, str(p))
+            logger.info('PPOAgent model saved to %s', p)
+        else:
+            logger.warning('PPOAgent: no trainable model to save.')
+
+    def load_model(self, path: str) -> None:
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f'Model file not found: {p}')
+        if _HAS_TORCH and hasattr(self, 'actor'):
+            checkpoint = torch.load(str(p), map_location=self.device)
+            self.actor.load_state_dict(checkpoint['actor'])
+            self.critic.load_state_dict(checkpoint['critic'])
+            logger.info('PPOAgent model loaded from %s', p)
+        else:
+            logger.warning('PPOAgent: no trainable model to load into.')
+
 
 class A3CAgent(BaseAgent):
     """Asynchronous Advantage Actor-Critic Agent (single-threaded simplified)"""
@@ -437,6 +498,27 @@ class A3CAgent(BaseAgent):
         self.episode_states.clear()
         self.episode_actions.clear()
         self.episode_rewards.clear()
+
+    def save_model(self, path: str) -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if _HAS_TORCH and hasattr(self, 'actor'):
+            torch.save({'actor': self.actor.state_dict(), 'critic': self.critic.state_dict()}, str(p))
+            logger.info('A3CAgent model saved to %s', p)
+        else:
+            logger.warning('A3CAgent: no trainable model to save.')
+
+    def load_model(self, path: str) -> None:
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f'Model file not found: {p}')
+        if _HAS_TORCH and hasattr(self, 'actor'):
+            checkpoint = torch.load(str(p), map_location=self.device)
+            self.actor.load_state_dict(checkpoint['actor'])
+            self.critic.load_state_dict(checkpoint['critic'])
+            logger.info('A3CAgent model loaded from %s', p)
+        else:
+            logger.warning('A3CAgent: no trainable model to load into.')
 
 
 # Simple random policy agent used as a fallback or for quick experiments
