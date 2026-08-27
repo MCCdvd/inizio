@@ -325,12 +325,8 @@ class TradingEnvironmentWithVolumeProfile:
                     'val': self.val,
                     'vah': self.vah
                 })
-                # Fee cost signal
+                # No flat buy reward — let profitability drive the signal
                 reward -= fee / (self.initial_balance + 1e-8)
-                # Trade-frequency penalty: scales aggressively after 100 trades
-                total_trades = self.buy_count + self.sell_count
-                if total_trades > 100:
-                    reward -= 0.02 * (total_trades / 100)
                 self.hold_steps = 0  # reset hold counter on buy
                 self.buy_count += 1
         
@@ -362,15 +358,10 @@ class TradingEnvironmentWithVolumeProfile:
                     'vah': self.vah
                 })
                 
-                # Holding bonus: reward longer holds on profitable exits
-                hold_bonus = min(self.hold_steps / 10.0, 1.0) * 0.02  # up to +0.02 for 10+ day holds
-                reward += profit_pct + sell_incentive + hold_bonus
+                reward += profit_pct + sell_incentive
                 # Round-trip completion bonus: reward profitable exits
                 if profit_pct > 0:
                     reward += profit_pct * 0.5
-                # Penalty for quick sells (<3 days) that lose money
-                elif profit_pct < 0 and self.hold_steps < 3:
-                    reward += profit_pct * 0.5  # double-penalise quick losers
                 self.sell_count += 1
                 self.shares_held = 0
                 self.entry_price = None
@@ -379,11 +370,11 @@ class TradingEnvironmentWithVolumeProfile:
         else:  # Hold (action == 0)
             if self.shares_held > 0:
                 self.hold_steps += 1
-                # Penalty: holding > 5 days with < 1% price growth since entry
-                if self.hold_steps > 5 and self.entry_price:
+                # Penalty: holding > 3 days with < 1% price growth since entry
+                if self.hold_steps > 3 and self.entry_price:
                     price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
                     if price_growth < 0.01:
-                        reward -= 0.005
+                        reward -= 0.0025
         
         # advance
         self.current_step += 1
