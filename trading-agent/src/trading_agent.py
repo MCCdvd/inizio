@@ -117,6 +117,7 @@ class TradingEnvironmentWithVolumeProfile:
         self.balance = float(initial_balance)
         self.shares_held = 0
         self.entry_price: Optional[float] = None
+        self.hold_steps: int = 0
         self.trades = []
         self.current_step = 0
         self.prices: np.ndarray = np.array([])
@@ -229,6 +230,7 @@ class TradingEnvironmentWithVolumeProfile:
         self.balance = float(self.initial_balance)
         self.shares_held = 0
         self.entry_price = None
+        self.hold_steps = 0
         self.trades = []
         self.portfolio_history = [float(self.initial_balance)]
         self.returns_history = []
@@ -318,6 +320,7 @@ class TradingEnvironmentWithVolumeProfile:
                     'vah': self.vah
                 })
                 reward += 0.1 - (fee / (self.initial_balance + 1e-8))
+                self.hold_steps = 0  # reset hold counter on buy
         
         elif action == 2:  # Sell
             if self.shares_held > 0:
@@ -350,6 +353,16 @@ class TradingEnvironmentWithVolumeProfile:
                 reward += profit_pct + sell_incentive
                 self.shares_held = 0
                 self.entry_price = None
+                self.hold_steps = 0  # reset hold counter on sell
+        
+        else:  # Hold (action == 0)
+            if self.shares_held > 0:
+                self.hold_steps += 1
+                # Penalty: holding > 3 days with < 1% price growth since entry
+                if self.hold_steps > 3 and self.entry_price:
+                    price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
+                    if price_growth < 0.01:
+                        reward -= 0.05
         
         # advance
         self.current_step += 1
