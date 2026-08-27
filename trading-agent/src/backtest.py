@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import logging
+import math
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional
@@ -77,6 +78,8 @@ class BacktestEngine:
         self,
         env: TradingEnvironmentWithVolumeProfile,
         algorithm: str,
+        start_date: str,
+        end_date: str,
         episode_returns,
         best_episode: int,
         best_portfolio: float,
@@ -98,6 +101,8 @@ class BacktestEngine:
         results = {
             'symbol': self.stock_symbol,
             'algorithm': algorithm,
+            'start_date': start_date,
+            'end_date': end_date,
             'initial_capital': float(self.initial_capital),
             'final_portfolio': float(final_portfolio),
             'total_return_pct': float(final_return),
@@ -113,8 +118,8 @@ class BacktestEngine:
             'trades': env.trades,
             'portfolio_history': [float(x) for x in env.portfolio_history],
             'period_returns': [float(x) for x in env.returns_history],
-            'sharpe_ratio': float(sharpe_ratio) if sharpe_ratio == sharpe_ratio else 0.0,
-            'sortino_ratio': float(sortino_ratio) if sortino_ratio == sortino_ratio else 0.0,
+            'sharpe_ratio': float(sharpe_ratio) if math.isfinite(sharpe_ratio) else 0.0,
+            'sortino_ratio': float(sortino_ratio) if math.isfinite(sortino_ratio) else 0.0,
             'max_drawdown': float(max_drawdown),
             'trade_metrics': trade_metrics,
             'transaction_cost': float(self.transaction_cost),
@@ -124,7 +129,7 @@ class BacktestEngine:
             results['selector'] = selector_details
         return results
 
-    def _run_single_algorithm(self, env: TradingEnvironmentWithVolumeProfile, algorithm: str, episodes: int, backend: str):
+    def _run_single_algorithm(self, env: TradingEnvironmentWithVolumeProfile, algorithm: str, episodes: int, backend: str, start_date: str, end_date: str):
         agent = get_agent(algorithm, backend=backend, state_size=6, action_size=3, seed=self.seed)
         episode_returns = []
         best_portfolio = self.initial_capital
@@ -153,9 +158,9 @@ class BacktestEngine:
                     returns,
                 )
 
-        return self._finalize_results(env, algorithm, episode_returns, best_episode, best_portfolio)
+        return self._finalize_results(env, algorithm, start_date, end_date, episode_returns, best_episode, best_portfolio)
 
-    def _run_adaptive(self, env: TradingEnvironmentWithVolumeProfile, episodes: int, backend: str) -> Dict:
+    def _run_adaptive(self, env: TradingEnvironmentWithVolumeProfile, episodes: int, backend: str, start_date: str, end_date: str) -> Dict:
         selector = AdaptiveStrategySelector(
             initial_capital=self.initial_capital,
             transaction_cost=self.transaction_cost,
@@ -231,7 +236,7 @@ class BacktestEngine:
             'feature_snapshots': feature_snapshots,
         }
 
-        return self._finalize_results(env, 'adaptive', episode_returns, best_episode, best_portfolio, selector_details)
+        return self._finalize_results(env, 'adaptive', start_date, end_date, episode_returns, best_episode, best_portfolio, selector_details)
 
     def run_backtest(
         self,
@@ -264,9 +269,9 @@ class BacktestEngine:
 
         env = self._create_environment(start_date, end_date)
         if algorithm.lower() == 'adaptive':
-            results = self._run_adaptive(env, episodes, backend)
+            results = self._run_adaptive(env, episodes, backend, start_date, end_date)
         elif algorithm.lower() in {'dqn', 'ppo', 'a3c'}:
-            results = self._run_single_algorithm(env, algorithm.lower(), episodes, backend)
+            results = self._run_single_algorithm(env, algorithm.lower(), episodes, backend, start_date, end_date)
         else:
             raise ValueError(f'Unknown algorithm: {algorithm}')
 
@@ -298,7 +303,7 @@ class BacktestEngine:
 
         if output_json:
             with open(output_json, 'w', encoding='utf-8') as handle:
-                json.dump(results, handle, indent=2)
+                json.dump(results, handle, indent=2, default=float)
             logger.info('Saved summary JSON to %s', output_json)
 
         if not no_plot:

@@ -228,13 +228,13 @@ class AdaptiveStrategySelector:
         for idx in range(start, max(start, stop), max(1, self.training_step)):
             history_prices = prices_arr[max(0, idx - self.lookback_window):idx]
             history_volumes = volumes_arr[max(0, idx - self.lookback_window):idx]
-            future_prices = prices_arr[idx - self.lookback_window: idx + self.evaluation_horizon]
-            future_volumes = volumes_arr[idx - self.lookback_window: idx + self.evaluation_horizon]
-            if future_prices.size < max(self.lookback_window + 2, self.evaluation_horizon):
+            eval_prices = prices_arr[idx - self.lookback_window: idx + self.evaluation_horizon]
+            eval_volumes = volumes_arr[idx - self.lookback_window: idx + self.evaluation_horizon]
+            if eval_prices.size < max(self.lookback_window + 2, self.evaluation_horizon):
                 continue
 
             feature_row = MarketRegimeFeatureExtractor.extract(history_prices, history_volumes, self.lookback_window)
-            scores = self._evaluate_candidate_scores(future_prices, future_volumes)
+            scores = self._evaluate_candidate_scores(eval_prices, eval_volumes)
             label = max(scores.items(), key=lambda item: item[1])[0]
             X.append(feature_row.as_array())
             y.append(label)

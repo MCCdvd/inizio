@@ -203,6 +203,9 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
 
 def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: int = None):
     """Train adaptive strategy selector with runtime strategy switching."""
+    if episodes <= 0:
+        raise ValueError("episodes must be > 0")
+
     logger.info(f"Training Adaptive Strategy Selector on {stock_symbol}")
 
     env = TradingEnvironmentWithVolumeProfile(
