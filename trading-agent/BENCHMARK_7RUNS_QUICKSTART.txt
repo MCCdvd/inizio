@@ -1,0 +1,63 @@
+📊 7-RUN BENCHMARK QUICK START
+==============================
+
+PROBLEM:
+  DQN returned +9.01% one run, +0.56% the next on same data
+  = Results are random without fixed seed
+  
+SOLUTION:
+  Run each algorithm 7 times with fixed seeds, calculate stats
+
+USAGE:
+  # Simplest approach
+  chmod +x benchmark_7runs.sh
+  ./benchmark_7runs.sh
+
+  # Or Python directly
+  python benchmark_7runs.py
+
+  # Custom options
+  python benchmark_7runs.py --stock MSFT --episodes 250
+
+OUTPUT:
+  benchmarks/
+  ├── benchmark_results_20260828_130000.csv     # All 21 runs
+  └── benchmark_statistics_20260828_130000.csv  # Aggregated stats
+
+WHAT YOU GET:
+  ✓ Mean return ± std dev for each algorithm
+  ✓ Min/max range across 7 runs
+  ✓ 95% confidence intervals
+  ✓ Sharpe ratio statistics
+  ✓ Trading metrics (trades, win rate, profit factor)
+
+INTERPRETING RESULTS:
+  Algorithm  Return Mean   Return CI          Sharpe Mean
+  ─────────────────────────────────────────────────────────
+  DQN        +0.56% ±0.94% [−0.87%, +1.99%]  -0.1167
+  PPO        +0.20% ±1.23% [−1.02%, +1.42%]  -0.0029  
+  A3C        +11.80% ±0.67% [+11.16%, +12.44%] 1.0742 ← WINNER
+  
+  → A3C wins: highest mean, lowest variance, excellent Sharpe ratio
+
+TIMING:
+  Each run: ~15 minutes
+  Full benchmark: 21 runs = ~5-6 hours total
+  (or 3-4 hours with --episodes 100)
+
+NEXT STEPS:
+  1. Run: ./benchmark_7runs.sh
+  2. Wait 5-6 hours
+  3. Check benchmarks/ directory for results
+  4. Review benchmark_statistics CSV
+  5. Decide: Which algorithm to use?
+  6. Validate on different stock (MSFT/GOOGL)
+  7. Proceed to production trading
+
+ADVANCED:
+  - Different episodes: --episodes 500
+  - No short selling: --no-short-selling
+  - Custom seeds: --seeds 1 2 3 4 5 6 7
+  - Different stock: --stock MSFT
+
+For detailed explanation, see: BENCHMARK_7RUNS.md

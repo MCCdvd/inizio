@@ -1,0 +1,57 @@
+name: Run Benchmarks
+
+on:
+  # Run on schedule (daily at 2 AM UTC)
+  schedule:
+    - cron: '0 2 * * *'
+  # Run on push to main branch
+  push:
+    branches:
+      - main
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install trading-agent dependencies
+        run: |
+          cd trading-agent
+          pip install --upgrade pip
+          pip install -q -r requirements.txt
+      
+      - name: Run benchmarks (CI mode)
+        run: |
+          cd trading-agent
+          python benchmark_7runs.py --stock AAPL --ci-mode
+      
+      - name: Commit and push results
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Only commit if there are changes
+          if git diff --quiet trading-agent/benchmarks/; then
+            echo "No changes to commit"
+          else
+            git add trading-agent/benchmarks/
+            git commit -m "chore: update benchmark results [automated]"
+            git push
+          fi
+      
+      - name: Report summary
+        if: always()
+        run: |
+          echo "✅ Benchmark workflow completed"
+          echo "Results saved in: trading-agent/benchmarks/"
+          echo "Check the CSV files for detailed metrics"

@@ -1,0 +1,83 @@
+================================================================================
+MODEL COMPARISON FRAMEWORK - QUICK START GUIDE
+================================================================================
+
+1. BASIC USAGE (Compare all 3 models on AAPL for 1000 episodes):
+   
+   cd trading-agent
+   PYTHONPATH=src python compare_models.py --stock AAPL --episodes 1000
+
+2. WITH SHELL SCRIPT:
+
+   cd trading-agent
+   ./compare_models.sh --stock AAPL --episodes 1000
+
+3. CUSTOM PARAMETERS:
+
+   PYTHONPATH=src python compare_models.py \
+     --stock AAPL \
+     --episodes 500 \
+     --flat-fee 4.0 \
+     --seed 42 \
+     --output-dir ./my_results
+
+4. OUTPUT STRUCTURE:
+
+   model_comparison/
+   ├── comparison_report.csv          # Summary table
+   ├── comparison_report.html         # Visual report
+   ├── dqn_AAPL_1000ep/              # DQN results
+   │   ├── summary.json
+   │   ├── trades.csv
+   │   ├── episodes.csv
+   │   └── model.pt
+   ├── ppo_AAPL_1000ep/              # PPO results
+   │   └── ...
+   └── a3c_AAPL_1000ep/              # A3C results
+       └── ...
+
+5. WHAT TO LOOK FOR:
+
+   ✅ HIGH: Sharpe Ratio (>0.5 is good)
+   ✅ HIGH: Sortino Ratio (>0.5 is good)
+   ✅ HIGH: Win Rate (>50% is profitable)
+   ✅ HIGH: Profit Factor (>1.5x is strong)
+   ✅ LOW: Max Drawdown (closer to 0 is better)
+   ⚠️  CHECK: Return % (but not the only metric!)
+
+6. EXPECTED TIME:
+
+   100 episodes:  2-5 minutes per model (6-15 min total)
+   500 episodes:  15-30 minutes per model (45-90 min total)
+   1000 episodes: 30-60 minutes per model (90-180 min total)
+
+7. REPRODUCIBLE RESULTS:
+
+   Same seed (--seed 42) = Same results every time
+   Different seeds = See model robustness
+
+8. ANALYZE RESULTS:
+
+   - View CSV: Open comparison_report.csv in Excel/Sheets
+   - View HTML: Open comparison_report.html in web browser
+   - Compare metrics side-by-side
+   - Check "Best Performing Models" section
+   - Review individual model files in subdirectories
+
+================================================================================
+EXAMPLE WORKFLOW:
+================================================================================
+
+# Step 1: Quick test (100 episodes)
+PYTHONPATH=src python compare_models.py --stock AAPL --episodes 100
+
+# Step 2: Review comparison_report.html to see which model performs best
+
+# Step 3: Full comparison (1000 episodes)
+PYTHONPATH=src python compare_models.py --stock AAPL --episodes 1000
+
+# Step 4: Compare results with previous runs
+
+# Step 5: Decide on best model for production deployment
+
+================================================================================

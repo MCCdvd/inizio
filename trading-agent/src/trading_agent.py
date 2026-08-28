@@ -103,6 +103,7 @@ class TradingEnvironmentWithVolumeProfile:
         stock_symbol: str,
         initial_balance: float = 10000,
         transaction_cost: float = 0.0,
+        flat_fee: float = 10.0,
         lookback_days: int = 30,
         seed: Optional[int] = None,
         data_source: str = "yahoo",
@@ -114,9 +115,13 @@ class TradingEnvironmentWithVolumeProfile:
         self.stock_symbol = stock_symbol
         self.initial_balance = float(initial_balance)
         self.transaction_cost = max(0.0, float(transaction_cost))
+        self.flat_fee = max(0.0, float(flat_fee))
         self.balance = float(initial_balance)
         self.shares_held = 0
         self.entry_price: Optional[float] = None
+        self.hold_steps: int = 0
+        self.buy_count: int = 0
+        self.sell_count: int = 0
         self.trades = []
         self.current_step = 0
         self.prices: np.ndarray = np.array([])
@@ -229,6 +234,9 @@ class TradingEnvironmentWithVolumeProfile:
         self.balance = float(self.initial_balance)
         self.shares_held = 0
         self.entry_price = None
+        self.hold_steps = 0
+        self.buy_count = 0
+        self.sell_count = 0
         self.trades = []
         self.portfolio_history = [float(self.initial_balance)]
         self.returns_history = []
@@ -250,7 +258,7 @@ class TradingEnvironmentWithVolumeProfile:
         return float(self.balance + (self.shares_held * float(price)))
     
     def _get_state(self) -> np.ndarray:
-        """Get current state vector"""
+        """Get current state vector (supports long and short positions)"""
         # Ensure current_step in bounds
         if len(self.prices) == 0:
             # Empty state
@@ -272,9 +280,12 @@ class TradingEnvironmentWithVolumeProfile:
         recent_prices = self.prices[recent_start:self.current_step + 1]
         price_norm = float(current_price / (np.max(recent_prices) + 1e-8)) if len(recent_prices) > 0 else 0.0
         
+        # Position size: normalized by 100. Can be positive (long) or negative (short)
+        position_size = float(self.shares_held / 100)
+        
         state = np.array([
             float(balance_ratio),
-            float(self.shares_held / 100),
+            position_size,  # Can be negative for short positions
             float(poc_dist),
             float(vah_dist),
             float(val_dist),
@@ -284,7 +295,7 @@ class TradingEnvironmentWithVolumeProfile:
         return state
     
     def step(self, action: int) -> Tuple[np.ndarray, float, bool]:
-        """Execute trading action"""
+        """Execute trading action. Supports both long and short selling."""
         if len(self.prices) == 0:
             return self._get_state(), 0.0, True
 
@@ -292,37 +303,77 @@ class TradingEnvironmentWithVolumeProfile:
         current_price = float(self.prices[self.current_step])
         reward = -0.01
         
-        if action == 1:  # Buy
-            max_shares = int(self.balance / (current_price * (1 + self.transaction_cost) + 1e-8))
-            if max_shares > 0:
-                distance_to_val = abs(current_price - self.val) / (self.val + 1e-8) if self.val != 0 else 1
-                buy_incentive = max(0, 0.05 - distance_to_val)
-                
-                shares_to_buy = max(1, int(max_shares * (0.5 + buy_incentive)))
-                shares_to_buy = min(shares_to_buy, max_shares)
-                
-                cost = shares_to_buy * current_price
-                fee = cost * self.transaction_cost
-                self.balance -= (cost + fee)
-                self.shares_held += shares_to_buy
-                self.entry_price = current_price
-                
-                self.trades.append({
-                    'type': 'BUY',
-                    'step': self.current_step,
-                    'price': current_price,
-                    'shares': shares_to_buy,
-                    'fee': float(fee),
-                    'poc': self.poc,
-                    'val': self.val,
-                    'vah': self.vah
-                })
-                reward += 0.1 - (fee / (self.initial_balance + 1e-8))
+        if action == 1:  # Buy or Cover Short
+            if self.shares_held >= 0:
+                # LONG: Buy more shares
+                max_shares = int((self.balance - self.flat_fee) / (current_price * (1 + self.transaction_cost) + 1e-8))
+                if max_shares > 0:
+                    distance_to_val = abs(current_price - self.val) / (self.val + 1e-8) if self.val != 0 else 1
+                    buy_incentive = max(0, 0.05 - distance_to_val)
+                    
+                    shares_to_buy = max(1, int(max_shares * (0.5 + buy_incentive)))
+                    shares_to_buy = min(shares_to_buy, max_shares)
+                    
+                    cost = shares_to_buy * current_price
+                    fee = cost * self.transaction_cost + self.flat_fee
+                    self.balance -= (cost + fee)
+                    self.shares_held += shares_to_buy
+                    self.entry_price = current_price
+                    
+                    self.trades.append({
+                        'type': 'BUY',
+                        'step': self.current_step,
+                        'price': current_price,
+                        'shares': shares_to_buy,
+                        'fee': float(fee),
+                        'poc': self.poc,
+                        'val': self.val,
+                        'vah': self.vah
+                    })
+                    reward -= fee / (self.initial_balance + 1e-8)
+                    self.hold_steps = 0
+                    self.buy_count += 1
+            else:
+                # SHORT: Cover short position (buy to close)
+                shares_to_cover = min(-self.shares_held, int((self.balance - self.flat_fee) / (current_price * (1 + self.transaction_cost) + 1e-8)))
+                if shares_to_cover > 0:
+                    cost = shares_to_cover * current_price
+                    fee = cost * self.transaction_cost + self.flat_fee
+                    
+                    if self.entry_price:
+                        # Profit from short: entry_price - current_price (when price goes down)
+                        profit = (self.entry_price * shares_to_cover) - (cost + fee)
+                        profit_pct = profit / (self.entry_price * shares_to_cover + 1e-8)
+                    else:
+                        profit = 0
+                        profit_pct = 0
+                    
+                    self.balance -= (cost + fee)
+                    self.shares_held += shares_to_cover  # Reduces negative position
+                    
+                    self.trades.append({
+                        'type': 'COVER',
+                        'step': self.current_step,
+                        'price': current_price,
+                        'shares': shares_to_cover,
+                        'fee': float(fee),
+                        'profit_pct': profit_pct,
+                        'poc': self.poc,
+                        'val': self.val,
+                        'vah': self.vah
+                    })
+                    
+                    reward += profit_pct
+                    if profit_pct > 0:
+                        reward += profit_pct * 0.5
+                    self.buy_count += 1
+                    self.hold_steps = 0
         
-        elif action == 2:  # Sell
+        elif action == 2:  # Sell or Open Short
             if self.shares_held > 0:
+                # LONG: Close long position
                 revenue = self.shares_held * current_price
-                fee = revenue * self.transaction_cost
+                fee = revenue * self.transaction_cost + self.flat_fee
                 self.balance += revenue - fee
                 
                 if self.entry_price:
@@ -348,18 +399,75 @@ class TradingEnvironmentWithVolumeProfile:
                 })
                 
                 reward += profit_pct + sell_incentive
+                if profit_pct > 0:
+                    reward += profit_pct * 0.5
+                self.sell_count += 1
                 self.shares_held = 0
                 self.entry_price = None
+                self.hold_steps = 0
+            else:
+                # SHORT: Open short position (sell without owning)
+                max_short_shares = int((self.balance - self.flat_fee) / (current_price * (1 + self.transaction_cost) + 1e-8))
+                if max_short_shares > 0:
+                    distance_to_vah = abs(current_price - self.vah) / (self.vah + 1e-8) if self.vah != 0 else 1
+                    short_incentive = max(0, 0.05 - distance_to_vah)  # Incentive to short at resistance
+                    
+                    shares_to_short = max(1, int(max_short_shares * (0.5 + short_incentive)))
+                    shares_to_short = min(shares_to_short, max_short_shares)
+                    
+                    revenue = shares_to_short * current_price
+                    fee = revenue * self.transaction_cost + self.flat_fee
+                    self.balance += revenue - fee
+                    self.shares_held -= shares_to_short  # Negative position
+                    self.entry_price = current_price
+                    
+                    self.trades.append({
+                        'type': 'SHORT',
+                        'step': self.current_step,
+                        'price': current_price,
+                        'shares': shares_to_short,
+                        'fee': float(fee),
+                        'poc': self.poc,
+                        'val': self.val,
+                        'vah': self.vah
+                    })
+                    
+                    reward += short_incentive
+                    self.sell_count += 1
+                    self.hold_steps = 0
+        
+        else:  # Hold (action == 0)
+            # Hold logic for both long and short positions
+            if self.shares_held != 0:
+                self.hold_steps += 1
+                # Penalty for holding long > 3 days with minimal growth
+                if self.shares_held > 0 and self.hold_steps > 3 and self.entry_price:
+                    price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
+                    if price_growth < 0.01:
+                        reward -= 0.0025
+                # Penalty for holding short > 3 days with price increase
+                elif self.shares_held < 0 and self.hold_steps > 3 and self.entry_price:
+                    price_change = (current_price - self.entry_price) / (self.entry_price + 1e-8)
+                    if price_change > -0.01:  # Price not falling enough
+                        reward -= 0.0025
         
         # advance
         self.current_step += 1
         done = self.current_step >= len(self.prices)
         
-        if done and self.shares_held > 0:
+        # Liquidation at end of episode (long or short)
+        if done and self.shares_held != 0:
             final_idx = min(self.current_step - 1, len(self.prices) - 1)
             final_price = float(self.prices[final_idx])
-            liquidation_value = self.shares_held * final_price
-            self.balance += liquidation_value - (liquidation_value * self.transaction_cost)
+            if self.shares_held > 0:
+                # Long liquidation
+                liquidation_value = self.shares_held * final_price
+                self.balance += liquidation_value - (liquidation_value * self.transaction_cost) - self.flat_fee
+            else:
+                # Short liquidation (buy back at final price)
+                buyback_cost = abs(self.shares_held) * final_price
+                fee = buyback_cost * self.transaction_cost + self.flat_fee
+                self.balance -= (buyback_cost + fee)
             self.shares_held = 0
         
         next_idx = min(self.current_step, len(self.prices) - 1)
