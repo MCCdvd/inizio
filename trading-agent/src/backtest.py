@@ -129,8 +129,13 @@ class BacktestEngine:
             results['selector'] = selector_details
         return results
 
-    def _run_single_algorithm(self, env: TradingEnvironmentWithVolumeProfile, algorithm: str, episodes: int, backend: str, start_date: str, end_date: str):
+    def _run_single_algorithm(self, env: TradingEnvironmentWithVolumeProfile, algorithm: str, episodes: int, backend: str, start_date: str, end_date: str, load_model_path: str = None):
         agent = get_agent(algorithm, backend=backend, state_size=6, action_size=3, seed=self.seed)
+        if load_model_path:
+            agent.load_model(load_model_path)
+            # Eval mode: disable exploration for DQN
+            if hasattr(agent, 'epsilon'):
+                agent.epsilon = 0.0
         episode_returns = []
         best_portfolio = self.initial_capital
         best_episode = 0
@@ -249,6 +254,7 @@ class BacktestEngine:
         output_json: str = None,
         output_dir: str = None,
         no_plot: bool = False,
+        load_model_path: str = None,
     ) -> Dict:
         logger.info('Backtesting %s from %s to %s', self.stock_symbol, start_date, end_date)
         logger.info('Algorithm: %s, Episodes: %d, Backend: %s', algorithm.upper(), episodes, backend)
@@ -271,7 +277,7 @@ class BacktestEngine:
         if algorithm.lower() == 'adaptive':
             results = self._run_adaptive(env, episodes, backend, start_date, end_date)
         elif algorithm.lower() in {'dqn', 'ppo', 'a3c'}:
-            results = self._run_single_algorithm(env, algorithm.lower(), episodes, backend, start_date, end_date)
+            results = self._run_single_algorithm(env, algorithm.lower(), episodes, backend, start_date, end_date, load_model_path=load_model_path)
         else:
             raise ValueError(f'Unknown algorithm: {algorithm}')
 
@@ -372,6 +378,7 @@ def parse_args():
     parser.add_argument('--output-json', type=str, default=None, help='Optional JSON output path')
     parser.add_argument('--output-dir', type=str, default='output', help='Artifacts directory')
     parser.add_argument('--no-plot', action='store_true', help='Disable plots')
+    parser.add_argument('--load-model', type=str, default=None, help='Path to pre-trained model weights for OOS evaluation')
     return parser.parse_args()
 
 
@@ -394,6 +401,7 @@ if __name__ == '__main__':
             output_json=args.output_json,
             output_dir=args.output_dir,
             no_plot=args.no_plot,
+            load_model_path=args.load_model,
         )
     except Exception as exc:
         logger.exception('Backtest failed: %s', exc)

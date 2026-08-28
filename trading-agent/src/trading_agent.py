@@ -103,6 +103,7 @@ class TradingEnvironmentWithVolumeProfile:
         stock_symbol: str,
         initial_balance: float = 10000,
         transaction_cost: float = 0.0,
+        flat_fee: float = 10.0,
         lookback_days: int = 30,
         seed: Optional[int] = None,
         data_source: str = "yahoo",
@@ -114,9 +115,13 @@ class TradingEnvironmentWithVolumeProfile:
         self.stock_symbol = stock_symbol
         self.initial_balance = float(initial_balance)
         self.transaction_cost = max(0.0, float(transaction_cost))
+        self.flat_fee = max(0.0, float(flat_fee))
         self.balance = float(initial_balance)
         self.shares_held = 0
         self.entry_price: Optional[float] = None
+        self.hold_steps: int = 0
+        self.buy_count: int = 0
+        self.sell_count: int = 0
         self.trades = []
         self.current_step = 0
         self.prices: np.ndarray = np.array([])
@@ -229,6 +234,9 @@ class TradingEnvironmentWithVolumeProfile:
         self.balance = float(self.initial_balance)
         self.shares_held = 0
         self.entry_price = None
+        self.hold_steps = 0
+        self.buy_count = 0
+        self.sell_count = 0
         self.trades = []
         self.portfolio_history = [float(self.initial_balance)]
         self.returns_history = []
@@ -293,7 +301,7 @@ class TradingEnvironmentWithVolumeProfile:
         reward = -0.01
         
         if action == 1:  # Buy
-            max_shares = int(self.balance / (current_price * (1 + self.transaction_cost) + 1e-8))
+            max_shares = int((self.balance - self.flat_fee) / (current_price * (1 + self.transaction_cost) + 1e-8))
             if max_shares > 0:
                 distance_to_val = abs(current_price - self.val) / (self.val + 1e-8) if self.val != 0 else 1
                 buy_incentive = max(0, 0.05 - distance_to_val)
@@ -302,7 +310,7 @@ class TradingEnvironmentWithVolumeProfile:
                 shares_to_buy = min(shares_to_buy, max_shares)
                 
                 cost = shares_to_buy * current_price
-                fee = cost * self.transaction_cost
+                fee = cost * self.transaction_cost + self.flat_fee
                 self.balance -= (cost + fee)
                 self.shares_held += shares_to_buy
                 self.entry_price = current_price
@@ -317,12 +325,15 @@ class TradingEnvironmentWithVolumeProfile:
                     'val': self.val,
                     'vah': self.vah
                 })
-                reward += 0.1 - (fee / (self.initial_balance + 1e-8))
+                # No flat buy reward — let profitability drive the signal
+                reward -= fee / (self.initial_balance + 1e-8)
+                self.hold_steps = 0  # reset hold counter on buy
+                self.buy_count += 1
         
         elif action == 2:  # Sell
             if self.shares_held > 0:
                 revenue = self.shares_held * current_price
-                fee = revenue * self.transaction_cost
+                fee = revenue * self.transaction_cost + self.flat_fee
                 self.balance += revenue - fee
                 
                 if self.entry_price:
@@ -348,8 +359,22 @@ class TradingEnvironmentWithVolumeProfile:
                 })
                 
                 reward += profit_pct + sell_incentive
+                # Round-trip completion bonus: reward profitable exits
+                if profit_pct > 0:
+                    reward += profit_pct * 0.5
+                self.sell_count += 1
                 self.shares_held = 0
                 self.entry_price = None
+                self.hold_steps = 0  # reset hold counter on sell
+        
+        else:  # Hold (action == 0)
+            if self.shares_held > 0:
+                self.hold_steps += 1
+                # Penalty: holding > 3 days with < 1% price growth since entry
+                if self.hold_steps > 3 and self.entry_price:
+                    price_growth = (current_price - self.entry_price) / (self.entry_price + 1e-8)
+                    if price_growth < 0.01:
+                        reward -= 0.0025
         
         # advance
         self.current_step += 1
@@ -359,7 +384,7 @@ class TradingEnvironmentWithVolumeProfile:
             final_idx = min(self.current_step - 1, len(self.prices) - 1)
             final_price = float(self.prices[final_idx])
             liquidation_value = self.shares_held * final_price
-            self.balance += liquidation_value - (liquidation_value * self.transaction_cost)
+            self.balance += liquidation_value - (liquidation_value * self.transaction_cost) - self.flat_fee
             self.shares_held = 0
         
         next_idx = min(self.current_step, len(self.prices) - 1)
