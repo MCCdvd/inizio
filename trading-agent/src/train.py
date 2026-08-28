@@ -494,6 +494,7 @@ if __name__ == "__main__":
     parser.add_argument('--output-dir', type=str, default=None, help='Directory to save results (trades.csv, episode_summary.csv, summary.json)')
     parser.add_argument('--save-model', type=str, default=None, help='Path to save trained model weights (e.g. output/model.pt)')
     parser.add_argument('--flat-fee', type=float, default=4.0, help='Flat fee in $ per trade (buy and sell). Default 4.0')
+    parser.add_argument('--short-selling', action='store_true', default=False, help='Enable short selling capability')
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
