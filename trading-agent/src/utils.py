@@ -94,7 +94,13 @@ def calculate_trade_metrics(trades: List[Dict]) -> Dict:
     avg_win = float(np.mean([t.get('profit_pct', 0) for t in winning])) if len(winning) > 0 else 0.0
     avg_loss = float(np.mean([t.get('profit_pct', 0) for t in losing])) if len(losing) > 0 else 0.0
 
-    profit_factor = abs(avg_win * len(winning) / (avg_loss * len(losing) + 1e-8)) if (len(losing) > 0) else float('inf')
+    # Calculate profit factor, handle edge cases
+    if len(losing) > 0:
+        pf = abs(avg_win * len(winning) / (avg_loss * len(losing) + 1e-8))
+        profit_factor = pf if not np.isinf(pf) else float('inf')
+    else:
+        # No losing trades: either 0 trades or all winners
+        profit_factor = float('inf') if len(winning) > 0 else 0.0
 
     return {
         'total_trades': len(trades),

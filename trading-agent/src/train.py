@@ -28,6 +28,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class JSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle inf and nan values"""
+    def encode(self, o):
+        if isinstance(o, float):
+            if math.isinf(o):
+                return '"inf"' if o > 0 else '"-inf"'
+            elif math.isnan(o):
+                return '"nan"'
+        return super().encode(o)
+    
+    def iterencode(self, o, _one_shot=False):
+        """Encode the given object and yield each string representation as available."""
+        for chunk in super().iterencode(o, _one_shot):
+            yield chunk
+
 def _build_summary(algorithm: str, stock_symbol: str, env, episode_rewards: list, episode_portfolios: list) -> dict:
     """Compute training summary metrics from a completed training run."""
     final_portfolio = float(episode_portfolios[-1]) if episode_portfolios else env.initial_balance
@@ -206,7 +221,7 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         agent.save_model(save_model_path)
     
     # Print summary as JSON for benchmarking framework
-    print(json.dumps(summary))
+    print(json.dumps(summary, cls=JSONEncoder))
 
     return {
         'agent': agent,
@@ -287,7 +302,7 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         agent.save_model(save_model_path)
     
     # Print summary as JSON for benchmarking framework
-    print(json.dumps(summary))
+    print(json.dumps(summary, cls=JSONEncoder))
 
     return {
         'agent': agent,
@@ -360,7 +375,7 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         agent.save_model(save_model_path)
     
     # Print summary as JSON for benchmarking framework
-    print(json.dumps(summary))
+    print(json.dumps(summary, cls=JSONEncoder))
 
     return {
         'agent': agent,

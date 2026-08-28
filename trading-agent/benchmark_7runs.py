@@ -49,7 +49,7 @@ class BenchmarkResult:
             'Max Drawdown': f"{self.max_drawdown:.4f}",
             'Total Trades': self.total_trades,
             'Win Rate %': f"{self.win_rate_pct:.2f}%",
-            'Profit Factor': f"{self.profit_factor:.2f}x",
+            'Profit Factor': "inf" if np.isinf(self.profit_factor) else f"{self.profit_factor:.2f}x",
             'Avg Win %': f"{self.avg_win_pct:+.2f}%",
             'Avg Loss %': f"{self.avg_loss_pct:+.2f}%",
             'Trades/Day': f"{self.trades_per_day:.4f}",
@@ -92,7 +92,7 @@ class AggregatedStats:
             'Sharpe Std': f"{self.sharpe_std:.4f}",
             'Trades Mean': f"{self.trades_mean:.1f}",
             'Win Rate Mean': f"{self.win_rate_mean:.2f}%",
-            'Profit Factor Mean': f"{self.profit_factor_mean:.2f}x",
+            'Profit Factor Mean': "inf" if np.isinf(self.profit_factor_mean) else f"{self.profit_factor_mean:.2f}x",
         }
 
 
@@ -245,9 +245,23 @@ class BenchmarkRunner:
                         tm = data['trade_metrics']
                         if isinstance(tm, dict):
                             if 'win_rate' in tm:
-                                metrics['win_rate_pct'] = float(tm.get('win_rate', 0)) * 100
+                                # win_rate is already a percentage (0-100), don't multiply by 100
+                                metrics['win_rate_pct'] = float(tm.get('win_rate', 0))
                             if 'profit_factor' in tm:
-                                metrics['profit_factor'] = float(tm.get('profit_factor', 0))
+                                pf = tm.get('profit_factor', 0)
+                                # Handle inf case for profit_factor (may be "inf" string from JSON)
+                                if isinstance(pf, str) and pf == '"inf"':
+                                    metrics['profit_factor'] = float('inf')
+                                elif isinstance(pf, str):
+                                    try:
+                                        pf_val = float(pf)
+                                        metrics['profit_factor'] = pf_val
+                                    except:
+                                        metrics['profit_factor'] = 0.0
+                                elif isinstance(pf, float) and np.isinf(pf):
+                                    metrics['profit_factor'] = float('inf')
+                                else:
+                                    metrics['profit_factor'] = float(pf)
                             if 'avg_win' in tm:
                                 metrics['avg_win_pct'] = float(tm.get('avg_win', 0))
                             if 'avg_loss' in tm:
@@ -370,19 +384,23 @@ class BenchmarkRunner:
             trades = [r.total_trades for r in algo_results]
             win_rates = [r.win_rate_pct for r in algo_results]
             profit_factors = [r.profit_factor for r in algo_results]
-            
+             
             # Compute statistics
             n = len(returns)
             return_mean = statistics.mean(returns)
             return_std = statistics.stdev(returns) if n > 1 else 0
-            
+             
             # 95% confidence interval (t-distribution, df=n-1)
             # Simplified: use 1.96 * std / sqrt(n) for large samples
             ci_margin = 1.96 * return_std / (n ** 0.5) if return_std > 0 else 0
-            
+             
             sharpe_mean = statistics.mean(sharpes)
             sharpe_std = statistics.stdev(sharpes) if n > 1 else 0
-            
+             
+            # Handle profit_factor mean - if any are inf, result is inf
+            pf_has_inf = any(np.isinf(pf) for pf in profit_factors)
+            pf_mean = float('inf') if pf_has_inf else statistics.mean(profit_factors)
+             
             stats = AggregatedStats(
                 algorithm=algorithm,
                 num_runs=n,
@@ -396,7 +414,7 @@ class BenchmarkRunner:
                 sharpe_std=sharpe_std,
                 trades_mean=statistics.mean(trades),
                 win_rate_mean=statistics.mean(win_rates),
-                profit_factor_mean=statistics.mean(profit_factors),
+                profit_factor_mean=pf_mean,
             )
             
             stats_by_algo[algorithm] = stats
