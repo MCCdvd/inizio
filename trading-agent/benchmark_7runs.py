@@ -16,6 +16,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import List, Dict, Any
 import statistics
+import numpy as np
 
 # Add src to path
 SCRIPT_DIR = Path(__file__).resolve().parent
