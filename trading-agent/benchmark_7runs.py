@@ -113,10 +113,10 @@ class BenchmarkRunner:
         """Run a single training session and extract results."""
         print(f"  [{algorithm} | Seed {seed}] Starting training...")
         
-        # Build command
+        # Build command - algorithm must be lowercase for train.py
         cmd = [
             "python", "src/train.py",
-            "--algorithm", algorithm,
+            "--algorithm", algorithm.lower(),
             "--stock", self.stock,
             "--episodes", str(self.episodes),
             "--seed", str(seed),
