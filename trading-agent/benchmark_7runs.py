@@ -100,13 +100,14 @@ class BenchmarkRunner:
     """Orchestrates multi-run benchmarking."""
     
     def __init__(self, stock: str = "AAPL", episodes: int = 250, 
-                 seeds: List[int] = None, short_selling: bool = True):
+                 seeds: List[int] = None, short_selling: bool = True, debug: bool = False):
         self.stock = stock
         self.episodes = episodes
         self.seeds = seeds or [42, 123, 456, 789, 1337, 2024, 99999]
         self.short_selling = short_selling
         self.algorithms = ["DQN", "PPO", "A3C"]
         self.results: List[BenchmarkResult] = []
+        self.debug = debug
         
     def run_training(self, algorithm: str, seed: int) -> BenchmarkResult:
         """Run a single training session and extract results."""
@@ -147,6 +148,13 @@ class BenchmarkRunner:
             
             # Parse output to extract metrics
             metrics = self._parse_output(output_lines, algorithm)
+            
+            # Debug output if requested
+            if self.debug and (metrics['return_pct'] == 0.0 and metrics['total_trades'] == 0):
+                print(f"    [DEBUG] No metrics extracted. Last 10 lines:")
+                for line in output_lines[-10:]:
+                    if line.strip():
+                        print(f"      {line[:100]}")
             
             # Check if metrics were successfully extracted
             # Success: we found valid return_pct in JSON output
@@ -200,12 +208,19 @@ class BenchmarkRunner:
             'trades_per_day': 0.0,
         }
         
+        # Debug: count JSON lines found
+        json_found = False
+        
         # Look for JSON output (summary from train.py)
         for line in lines:
             line_stripped = line.strip()
             if line_stripped.startswith('{') and line_stripped.endswith('}'):
                 try:
                     data = json.loads(line_stripped)
+                    json_found = True
+                    
+                    # Debug: print what keys we found
+                    # print(f"    DEBUG: Found JSON with keys: {list(data.keys())}")
                     
                     # Extract metrics from summary dict
                     if 'total_return_pct' in data:
@@ -228,50 +243,53 @@ class BenchmarkRunner:
                     # Extract from trade_metrics if present
                     if 'trade_metrics' in data:
                         tm = data['trade_metrics']
-                        if 'win_rate' in tm:
-                            metrics['win_rate_pct'] = float(tm.get('win_rate', 0)) * 100
-                        if 'profit_factor' in tm:
-                            metrics['profit_factor'] = float(tm.get('profit_factor', 0))
-                        if 'avg_win' in tm:
-                            metrics['avg_win_pct'] = float(tm.get('avg_win', 0))
-                        if 'avg_loss' in tm:
-                            metrics['avg_loss_pct'] = float(tm.get('avg_loss', 0))
+                        if isinstance(tm, dict):
+                            if 'win_rate' in tm:
+                                metrics['win_rate_pct'] = float(tm.get('win_rate', 0)) * 100
+                            if 'profit_factor' in tm:
+                                metrics['profit_factor'] = float(tm.get('profit_factor', 0))
+                            if 'avg_win' in tm:
+                                metrics['avg_win_pct'] = float(tm.get('avg_win', 0))
+                            if 'avg_loss' in tm:
+                                metrics['avg_loss_pct'] = float(tm.get('avg_loss', 0))
                     
                     # Extract from activity_metrics if present
                     if 'activity_metrics' in data:
                         am = data['activity_metrics']
-                        if 'trades_per_day' in am:
-                            metrics['trades_per_day'] = float(am.get('trades_per_day', 0))
+                        if isinstance(am, dict):
+                            if 'trades_per_day' in am:
+                                metrics['trades_per_day'] = float(am.get('trades_per_day', 0))
                     
                     # Found valid JSON, return metrics
                     return metrics
                     
-                except (json.JSONDecodeError, ValueError, KeyError):
+                except (json.JSONDecodeError, ValueError, KeyError) as e:
                     pass
         
-        # Fallback: try to parse text format if no JSON found
-        for line in lines:
-            line_lower = line.lower()
-            
-            # Parse text format lines
-            if 'return' in line_lower and '%' in line:
-                try:
-                    val = float(line.split(':')[-1].strip().rstrip('%').replace(',', ''))
-                    metrics['return_pct'] = val
-                except:
-                    pass
-            elif 'sharpe' in line_lower:
-                try:
-                    val = float(line.split(':')[-1].strip())
-                    metrics['sharpe_ratio'] = val
-                except:
-                    pass
-            elif 'total trades' in line_lower:
-                try:
-                    val = int(line.split(':')[-1].strip())
-                    metrics['total_trades'] = val
-                except:
-                    pass
+        # If no JSON found, try text format fallback
+        if not json_found:
+            for line in lines:
+                line_lower = line.lower()
+                
+                # Parse text format lines
+                if 'return' in line_lower and '%' in line:
+                    try:
+                        val = float(line.split(':')[-1].strip().rstrip('%').replace(',', ''))
+                        metrics['return_pct'] = val
+                    except:
+                        pass
+                elif 'sharpe' in line_lower:
+                    try:
+                        val = float(line.split(':')[-1].strip())
+                        metrics['sharpe_ratio'] = val
+                    except:
+                        pass
+                elif 'total trades' in line_lower:
+                    try:
+                        val = int(line.split(':')[-1].strip())
+                        metrics['total_trades'] = val
+                    except:
+                        pass
         
         return metrics
     
@@ -281,16 +299,29 @@ class BenchmarkRunner:
         print(f"   Stock: {self.stock}, Episodes: {self.episodes}")
         print(f"   Algorithms: {', '.join(self.algorithms)}")
         print(f"   Seeds: {self.seeds}")
-        print(f"   Short Selling: {'Enabled' if self.short_selling else 'Disabled'}\n")
+        print(f"   Short Selling: {'Enabled' if self.short_selling else 'Disabled'}")
+        if self.debug:
+            print(f"   Debug: ENABLED - showing raw output")
+        print()
         
         total_runs = len(self.algorithms) * len(self.seeds)
         current_run = 0
+        debug_done = False
         
         for algorithm in self.algorithms:
             print(f"📊 {algorithm}:")
             for seed in self.seeds:
                 current_run += 1
                 print(f"  Run {current_run}/{total_runs}")
+                
+                # Only show debug for first run
+                if self.debug and not debug_done:
+                    original_debug = self.debug
+                    self.debug = True
+                    debug_done = True
+                else:
+                    self.debug = False
+                
                 result = self.run_training(algorithm, seed)
                 self.results.append(result)
         
@@ -434,6 +465,8 @@ def main():
                        help="Disable short selling (default: enabled)")
     parser.add_argument("--seeds", type=int, nargs="+",
                        help="Custom seeds (default: 42 123 456 789 1337 2024 99999)")
+    parser.add_argument("--debug", action="store_true",
+                       help="Enable debug output showing raw training output")
     
     args = parser.parse_args()
     
@@ -443,7 +476,8 @@ def main():
         stock=args.stock,
         episodes=args.episodes,
         seeds=seeds,
-        short_selling=not args.no_short_selling
+        short_selling=not args.no_short_selling,
+        debug=args.debug
     )
     
     # Run all benchmarks
