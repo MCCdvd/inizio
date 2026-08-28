@@ -125,18 +125,28 @@ class BenchmarkRunner:
             cmd.append("--short-selling")
         
         try:
-            # Run training
+            # Run training - merge stderr into stdout to capture all output
             result = subprocess.run(
                 cmd,
                 cwd=str(SCRIPT_DIR),
                 capture_output=True,
                 text=True,
-                timeout=1200  # 20 minute timeout
+                timeout=1200,  # 20 minute timeout
+                env={**os.environ, "TF_CPP_MIN_LOG_LEVEL": "2"}  # Reduce TF logging
             )
             
-            if result.returncode != 0:
-                print(f"    ⚠️  Training failed: {result.stderr[:200]}")
-                # Return zeros for failed run
+            # Combine stdout and stderr for parsing
+            all_output = result.stdout + "\n" + result.stderr
+            output_lines = all_output.split('\n')
+            
+            # Parse output to extract metrics
+            metrics = self._parse_output(output_lines, algorithm)
+            
+            # Check if metrics were successfully extracted (return_pct should be non-zero or explicitly 0.00)
+            # Real error: all metrics are 0 AND returncode is non-zero AND no progress line found
+            if (metrics['return_pct'] == 0 and metrics['total_trades'] == 0 and 
+                result.returncode != 0 and 'Episode' not in all_output and 'episode' not in all_output.lower()):
+                print(f"    ⚠️  Training failed (return code {result.returncode})")
                 return BenchmarkResult(
                     algorithm=algorithm, seed=seed,
                     return_pct=0, sharpe_ratio=0, sortino_ratio=0,
@@ -144,10 +154,6 @@ class BenchmarkRunner:
                     profit_factor=0, avg_win_pct=0, avg_loss_pct=0,
                     trades_per_day=0
                 )
-            
-            # Parse output to extract metrics
-            output_lines = result.stdout.strip().split('\n')
-            metrics = self._parse_output(output_lines, algorithm)
             
             print(f"    ✓ Return: {metrics['return_pct']:+.2f}%, Sharpe: {metrics['sharpe_ratio']:.4f}")
             
@@ -182,41 +188,63 @@ class BenchmarkRunner:
             'trades_per_day': 0.0,
         }
         
-        # Look for JSON output or formatted metrics
+        # Look for JSON output (summary from train.py)
         for line in lines:
-            line_lower = line.lower()
-            
-            # Try to parse JSON if present
-            if line.strip().startswith('{'):
+            line_stripped = line.strip()
+            if line_stripped.startswith('{') and line_stripped.endswith('}'):
                 try:
-                    data = json.loads(line)
-                    if 'final_return_pct' in data:
-                        metrics['return_pct'] = float(data.get('final_return_pct', 0))
+                    data = json.loads(line_stripped)
+                    
+                    # Extract metrics from summary dict
+                    if 'total_return_pct' in data:
+                        metrics['return_pct'] = float(data.get('total_return_pct', 0))
+                    elif 'return_pct' in data:
+                        metrics['return_pct'] = float(data.get('return_pct', 0))
+                    
                     if 'sharpe_ratio' in data:
                         metrics['sharpe_ratio'] = float(data.get('sharpe_ratio', 0))
+                    
                     if 'sortino_ratio' in data:
                         metrics['sortino_ratio'] = float(data.get('sortino_ratio', 0))
+                    
                     if 'max_drawdown' in data:
                         metrics['max_drawdown'] = float(data.get('max_drawdown', 0))
+                    
                     if 'total_trades' in data:
                         metrics['total_trades'] = int(data.get('total_trades', 0))
-                    if 'win_rate_pct' in data:
-                        metrics['win_rate_pct'] = float(data.get('win_rate_pct', 0))
-                    if 'profit_factor' in data:
-                        metrics['profit_factor'] = float(data.get('profit_factor', 0))
-                    if 'avg_win_pct' in data:
-                        metrics['avg_win_pct'] = float(data.get('avg_win_pct', 0))
-                    if 'avg_loss_pct' in data:
-                        metrics['avg_loss_pct'] = float(data.get('avg_loss_pct', 0))
-                    if 'trades_per_day' in data:
-                        metrics['trades_per_day'] = float(data.get('trades_per_day', 0))
-                except:
+                    
+                    # Extract from trade_metrics if present
+                    if 'trade_metrics' in data:
+                        tm = data['trade_metrics']
+                        if 'win_rate' in tm:
+                            metrics['win_rate_pct'] = float(tm.get('win_rate', 0)) * 100
+                        if 'profit_factor' in tm:
+                            metrics['profit_factor'] = float(tm.get('profit_factor', 0))
+                        if 'avg_win' in tm:
+                            metrics['avg_win_pct'] = float(tm.get('avg_win', 0))
+                        if 'avg_loss' in tm:
+                            metrics['avg_loss_pct'] = float(tm.get('avg_loss', 0))
+                    
+                    # Extract from activity_metrics if present
+                    if 'activity_metrics' in data:
+                        am = data['activity_metrics']
+                        if 'trades_per_day' in am:
+                            metrics['trades_per_day'] = float(am.get('trades_per_day', 0))
+                    
+                    # Found valid JSON, return metrics
+                    return metrics
+                    
+                except (json.JSONDecodeError, ValueError, KeyError):
                     pass
+        
+        # Fallback: try to parse text format if no JSON found
+        for line in lines:
+            line_lower = line.lower()
             
             # Parse text format lines
             if 'return' in line_lower and '%' in line:
                 try:
-                    val = float(line.split(':')[-1].strip().rstrip('%'))
+                    val = float(line.split(':')[-1].strip().rstrip('%').replace(',', ''))
                     metrics['return_pct'] = val
                 except:
                     pass

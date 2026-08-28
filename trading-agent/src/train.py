@@ -201,6 +201,9 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         export_results(summary, output_dir)
     if save_model_path:
         agent.save_model(save_model_path)
+    
+    # Print summary as JSON for benchmarking framework
+    print(json.dumps(summary))
 
     return {
         'agent': agent,
@@ -279,6 +282,9 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         export_results(summary, output_dir)
     if save_model_path:
         agent.save_model(save_model_path)
+    
+    # Print summary as JSON for benchmarking framework
+    print(json.dumps(summary))
 
     return {
         'agent': agent,
@@ -349,6 +355,9 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
         export_results(summary, output_dir)
     if save_model_path:
         agent.save_model(save_model_path)
+    
+    # Print summary as JSON for benchmarking framework
+    print(json.dumps(summary))
 
     return {
         'agent': agent,
