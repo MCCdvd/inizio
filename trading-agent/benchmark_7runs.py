@@ -132,6 +132,7 @@ class BenchmarkRunner:
             env.update({
                 "TF_CPP_MIN_LOG_LEVEL": "3",  # Suppress all TF logging
                 "TF_FORCE_GPU_ALLOW_GROWTH": "true",  # Don't allocate all GPU memory
+                "CUDA_VISIBLE_DEVICES": "-1",  # Disable CUDA/GPU - use CPU only for CI/CD stability
             })
             
             result = subprocess.run(
@@ -486,14 +487,22 @@ def main():
                        help="Custom seeds (default: 42 123 456 789 1337 2024 99999)")
     parser.add_argument("--debug", action="store_true",
                        help="Enable debug output showing raw training output")
+    parser.add_argument("--ci-mode", action="store_true",
+                       help="CI/CD mode: reduce episodes to 50 for faster runs, disable GPU")
     
     args = parser.parse_args()
     
-    seeds = args.seeds or [42, 123, 456, 789, 1337, 2024, 99999]
+    # In CI mode, use fewer episodes and fewer seeds for faster feedback
+    if args.ci_mode:
+        episodes = 50
+        seeds = args.seeds or [42, 123, 456]  # Only 3 seeds in CI mode
+    else:
+        episodes = args.episodes
+        seeds = args.seeds or [42, 123, 456, 789, 1337, 2024, 99999]
     
     runner = BenchmarkRunner(
         stock=args.stock,
-        episodes=args.episodes,
+        episodes=episodes,
         seeds=seeds,
         short_selling=not args.no_short_selling,
         debug=args.debug
