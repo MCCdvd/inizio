@@ -4,7 +4,10 @@ Training script for trading agent with multiple algorithms
 import csv
 import json
 import math
+import os
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for headless environments
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -194,7 +197,7 @@ def train_dqn_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     VolumeProfileVisualizer.plot_volume_profile(env.prices, env.volumes, env.poc, env.vah, env.val, 
                                                trades=env.trades, title=f"DQN Agent - {stock_symbol}")
     VolumeProfileVisualizer.plot_training_results(episode_rewards, episode_portfolios, title=f"DQN Training - {stock_symbol}")
-    plt.show()
+    # plt.show()  # Disabled for headless
 
     summary = _build_summary('dqn', stock_symbol, env, episode_rewards, episode_portfolios)
     if output_dir:
@@ -275,7 +278,7 @@ def train_ppo_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     VolumeProfileVisualizer.plot_volume_profile(env.prices, env.volumes, env.poc, env.vah, env.val,
                                                trades=env.trades, title=f"PPO Agent - {stock_symbol}")
     VolumeProfileVisualizer.plot_training_results(episode_rewards, episode_portfolios, title=f"PPO Training - {stock_symbol}")
-    plt.show()
+    # plt.show()  # Disabled for headless
 
     summary = _build_summary('ppo', stock_symbol, env, episode_rewards, episode_portfolios)
     if output_dir:
@@ -348,7 +351,7 @@ def train_a3c_agent(stock_symbol: str = "AAPL", episodes: int = 50, seed: int = 
     VolumeProfileVisualizer.plot_volume_profile(env.prices, env.volumes, env.poc, env.vah, env.val,
                                                trades=env.trades, title=f"A3C Agent - {stock_symbol}")
     VolumeProfileVisualizer.plot_training_results(episode_rewards, episode_portfolios, title=f"A3C Training - {stock_symbol}")
-    plt.show()
+    # plt.show()  # Disabled for headless
 
     summary = _build_summary('a3c', stock_symbol, env, episode_rewards, episode_portfolios)
     if output_dir:
@@ -464,7 +467,7 @@ def train_adaptive_agent(stock_symbol: str = "AAPL", episodes: int = 20, seed: i
     VolumeProfileVisualizer.plot_training_results(
         episode_rewards, episode_portfolios, title=f"Adaptive Training - {stock_symbol}"
     )
-    plt.show()
+    # plt.show()  # Disabled for headless
 
     summary = _build_summary('adaptive', stock_symbol, env, episode_rewards, episode_portfolios)
     if output_dir:
@@ -521,4 +524,4 @@ if __name__ == "__main__":
         }
         
         VolumeProfileVisualizer.plot_multi_stock_comparison(results)
-        plt.show()
+        # plt.show()  # Disabled for headless

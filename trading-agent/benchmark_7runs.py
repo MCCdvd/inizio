@@ -125,14 +125,20 @@ class BenchmarkRunner:
             cmd.append("--short-selling")
         
         try:
-            # Run training - merge stderr into stdout to capture all output
+            # Run training - capture all output, suppress TensorFlow warnings
+            env = os.environ.copy()
+            env.update({
+                "TF_CPP_MIN_LOG_LEVEL": "3",  # Suppress all TF logging
+                "TF_FORCE_GPU_ALLOW_GROWTH": "true",  # Don't allocate all GPU memory
+            })
+            
             result = subprocess.run(
                 cmd,
                 cwd=str(SCRIPT_DIR),
                 capture_output=True,
                 text=True,
                 timeout=1200,  # 20 minute timeout
-                env={**os.environ, "TF_CPP_MIN_LOG_LEVEL": "2"}  # Reduce TF logging
+                env=env
             )
             
             # Combine stdout and stderr for parsing
@@ -142,11 +148,17 @@ class BenchmarkRunner:
             # Parse output to extract metrics
             metrics = self._parse_output(output_lines, algorithm)
             
-            # Check if metrics were successfully extracted (return_pct should be non-zero or explicitly 0.00)
-            # Real error: all metrics are 0 AND returncode is non-zero AND no progress line found
-            if (metrics['return_pct'] == 0 and metrics['total_trades'] == 0 and 
-                result.returncode != 0 and 'Episode' not in all_output and 'episode' not in all_output.lower()):
-                print(f"    ⚠️  Training failed (return code {result.returncode})")
+            # Check if metrics were successfully extracted
+            # Success: we found valid return_pct in JSON output
+            # Failure: no metrics extracted AND return code was non-zero AND no Episode lines
+            has_valid_metrics = metrics['return_pct'] != 0.0 or metrics['total_trades'] > 0
+            has_progress = any('Episode' in line or 'episode' in line for line in output_lines)
+            has_json = any('{' in line and 'total_return_pct' in line for line in output_lines)
+            
+            if not has_valid_metrics and result.returncode != 0 and not has_progress:
+                print(f"    ⚠️  Training failed (exit code {result.returncode})")
+                if result.stderr:
+                    print(f"       Error: {result.stderr[:150]}")
                 return BenchmarkResult(
                     algorithm=algorithm, seed=seed,
                     return_pct=0, sharpe_ratio=0, sortino_ratio=0,
@@ -164,7 +176,7 @@ class BenchmarkRunner:
             )
             
         except subprocess.TimeoutExpired:
-            print(f"    ⚠️  Training timeout")
+            print(f"    ⚠️  Training timeout (>20 min)")
             return BenchmarkResult(
                 algorithm=algorithm, seed=seed,
                 return_pct=0, sharpe_ratio=0, sortino_ratio=0,
