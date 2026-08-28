@@ -60,7 +60,7 @@ def _early_stop_check(
     initial_balance: float,
     window: int = 50,
     patience: int = 50,
-    min_episodes: int = 200,
+    min_episodes: int = 900,
 ) -> bool:
     """Return True when training should stop early.
 
@@ -68,6 +68,8 @@ def _early_stop_check(
     declining for *patience* consecutive episodes and at least *min_episodes*
     have been completed.  Uses period returns derived from episode portfolio
     values.
+    
+    Note: min_episodes is set to 900 to allow full training to ~1000 episodes.
     """
     n = len(episode_portfolios)
     if n < min_episodes + window:
