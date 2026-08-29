@@ -43,12 +43,15 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
+    brier_score_loss,
     f1_score,
+    log_loss,
     mean_absolute_error,
     mean_absolute_percentage_error,
     mean_squared_error,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
@@ -223,13 +226,29 @@ def load_from_yahoo(ticker: str, period: str = "5y") -> pd.DataFrame:
 # 2. Feature engineering
 # ---------------------------------------------------------------------------
 
-def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Add lag/rolling features; build regression & classification targets."""
+def build_features(df: pd.DataFrame, horizons: list = None) -> pd.DataFrame:
+    """Add lag/rolling features; build regression, classification, and
+    multi-horizon gain-probability targets.
+
+    Parameters
+    ----------
+    horizons : list of int, optional
+        Forward horizons (in trading days) for gain-probability targets.
+        Default: [1, 2, 3, 4, 5].
+    """
+    if horizons is None:
+        horizons = [1, 2, 3, 4, 5]
+
     d = df.copy()
 
     # --- Targets (shift -1 so row t has target for t+1) ---
     d["target_close"] = d["Close"].shift(-1)
     d["target_dir"] = (d["Close"].shift(-1) > d["Close"]).astype(int)
+
+    # --- Multi-horizon gain targets ---
+    # target_gain_Nd = 1 if Close(t+N) > Close(t), else 0
+    for h in horizons:
+        d[f"target_gain_{h}d"] = (d["Close"].shift(-h) > d["Close"]).astype(int)
 
     # --- Daily return ---
     d["return"] = d["Close"].pct_change()
@@ -266,8 +285,12 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_feature_columns(df: pd.DataFrame) -> list:
-    exclude = {"Date", "target_close", "target_dir"}
-    return [c for c in df.columns if c not in exclude]
+    exclude_prefixes = ("target_",)
+    exclude_exact = {"Date"}
+    return [
+        c for c in df.columns
+        if c not in exclude_exact and not any(c.startswith(p) for p in exclude_prefixes)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +357,49 @@ def evaluate_classification_wf(name, model, X, y, n_splits=5):
     }
 
 
+def evaluate_proba_wf(name, model, X, y, horizon: int, n_splits=5):
+    """Walk-forward probability calibration evaluation for gain prediction.
+
+    Metrics
+    -------
+    - ROC-AUC  : ranking quality of the probability (higher = better, 0.5 = random)
+    - Brier    : mean squared error of probability vs outcome (lower = better)
+    - Log-loss : cross-entropy loss (lower = better)
+    - Accuracy : fraction of correct binary predictions at p > 0.5 threshold
+    """
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    aucs, briers, loglosses, accs = [], [], [], []
+    for train_idx, test_idx in tscv.split(X):
+        X_tr, X_te = X[train_idx], X[test_idx]
+        y_tr, y_te = y[train_idx], y[test_idx]
+        # Skip folds with only one class in training set
+        if len(np.unique(y_tr)) < 2:
+            continue
+        sc = StandardScaler()
+        X_tr = sc.fit_transform(X_tr)
+        X_te = sc.transform(X_te)
+        model.fit(X_tr, y_tr)
+        prob = model.predict_proba(X_te)[:, 1]
+        pred = (prob >= 0.5).astype(int)
+        if len(np.unique(y_te)) < 2:
+            continue
+        aucs.append(roc_auc_score(y_te, prob))
+        briers.append(brier_score_loss(y_te, prob))
+        loglosses.append(log_loss(y_te, prob))
+        accs.append(accuracy_score(y_te, pred))
+    if not aucs:
+        return None
+    return {
+        "model": name,
+        "horizon": horizon,
+        "task": f"gain_prob_{horizon}d",
+        "ROC-AUC": float(np.mean(aucs)),
+        "Brier": float(np.mean(briers)),
+        "LogLoss": float(np.mean(loglosses)),
+        "Accuracy@0.5": float(np.mean(accs)),
+    }
+
+
 # ---------------------------------------------------------------------------
 # 4. Naive baseline
 # ---------------------------------------------------------------------------
@@ -388,6 +454,39 @@ def naive_classification_wf(df_feat, n_splits=5):
     }
 
 
+def naive_proba_wf(df_feat, horizon: int, n_splits=5):
+    """Naive gain probability baseline: predict the empirical up-rate of the training set."""
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    col = f"target_gain_{horizon}d"
+    if col not in df_feat.columns:
+        return None
+    y = np.array(df_feat[col])
+    aucs, briers, loglosses, accs = [], [], [], []
+    for train_idx, test_idx in tscv.split(y):
+        y_tr, y_te = y[train_idx], y[test_idx]
+        if len(np.unique(y_te)) < 2:
+            continue
+        # Naive: always predict the empirical up-rate from the training fold
+        p_up = float(y_tr.mean())
+        prob = np.full(len(y_te), p_up)
+        pred = (prob >= 0.5).astype(int)
+        aucs.append(roc_auc_score(y_te, prob))
+        briers.append(brier_score_loss(y_te, prob))
+        loglosses.append(log_loss(y_te, np.clip(prob, 1e-7, 1 - 1e-7)))
+        accs.append(accuracy_score(y_te, pred))
+    if not aucs:
+        return None
+    return {
+        "model": f"Naive (base rate)",
+        "horizon": horizon,
+        "task": f"gain_prob_{horizon}d",
+        "ROC-AUC": float(np.mean(aucs)),
+        "Brier": float(np.mean(briers)),
+        "LogLoss": float(np.mean(loglosses)),
+        "Accuracy@0.5": float(np.mean(accs)),
+    }
+
+
 # ---------------------------------------------------------------------------
 # 5. ARIMA walk-forward (if available)
 # ---------------------------------------------------------------------------
@@ -432,21 +531,31 @@ def arima_regression_wf(close_series, n_splits=5, order=(2, 1, 2)):
 # 6. Main pipeline
 # ---------------------------------------------------------------------------
 
-def run_pipeline(data: "str | pd.DataFrame", n_splits: int = 5, skip_arima: bool = False):
+def run_pipeline(
+    data: "str | pd.DataFrame",
+    n_splits: int = 5,
+    skip_arima: bool = False,
+    horizons: list = None,
+):
     """Run the full forecasting pipeline.
 
     Parameters
     ----------
     data : str or pd.DataFrame
         Either a path to a CSV file or a DataFrame already loaded/downloaded.
+    horizons : list of int, optional
+        Forward horizons for gain-probability forecasting (default: [2, 3, 4, 5]).
     """
+    if horizons is None:
+        horizons = [2, 3, 4, 5]
+
     # ---- Load data (accept both a path and a pre-loaded DataFrame) ----
     if isinstance(data, pd.DataFrame):
         df_raw = data
     else:
         df_raw = load_data(data)
     # ---- Feature engineering ----
-    df = build_features(df_raw)
+    df = build_features(df_raw, horizons=horizons)
     feature_cols = get_feature_columns(df)
 
     X_raw = df[feature_cols].values
@@ -536,12 +645,74 @@ def run_pipeline(data: "str | pd.DataFrame", n_splits: int = 5, skip_arima: bool
         results.append(res)
         print(f"  {res['model']:35s}  Acc={res['Accuracy']:.4f}  F1={res['F1']:.4f}")
 
+    # ---- Gain probability forecasting (multi-horizon) ----
+    proba_results = []
+    print("\n" + "=" * 60)
+    print("GAIN PROBABILITY FORECAST (multi-horizon)")
+    print("  Metric: ROC-AUC (>0.5 = better than random)")
+    print("=" * 60)
+
+    for h in horizons:
+        col = f"target_gain_{h}d"
+        if col not in df.columns:
+            continue
+        # Align: drop last h rows which have NaN target (due to forward shift)
+        valid_mask = df[col].notna()
+        X_h = X[valid_mask.values]
+        y_h = df.loc[valid_mask, col].values
+
+        print(f"\n  Horizon +{h}d  (% up days: {y_h.mean()*100:.1f}%)")
+
+        # Naive baseline
+        res = naive_proba_wf(df[valid_mask].reset_index(drop=True), h, n_splits=n_splits)
+        if res:
+            proba_results.append(res)
+            print(f"    {res['model']:30s}  AUC={res['ROC-AUC']:.4f}  Brier={res['Brier']:.4f}  Acc={res['Accuracy@0.5']:.4f}")
+
+        # Logistic Regression (outputs calibrated probabilities)
+        lr_p = LogisticRegression(max_iter=500, random_state=42)
+        res = evaluate_proba_wf("LogisticRegression", lr_p, X_h, y_h, h, n_splits=n_splits)
+        if res:
+            proba_results.append(res)
+            print(f"    {res['model']:30s}  AUC={res['ROC-AUC']:.4f}  Brier={res['Brier']:.4f}  Acc={res['Accuracy@0.5']:.4f}")
+
+        # RandomForest with calibrated probabilities
+        rf_p = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
+        res = evaluate_proba_wf("RandomForest", rf_p, X_h, y_h, h, n_splits=n_splits)
+        if res:
+            proba_results.append(res)
+            print(f"    {res['model']:30s}  AUC={res['ROC-AUC']:.4f}  Brier={res['Brier']:.4f}  Acc={res['Accuracy@0.5']:.4f}")
+
+        # LightGBM (native probability output)
+        if LGBM_AVAILABLE:
+            lgbm_p = lgb.LGBMClassifier(
+                n_estimators=300, learning_rate=0.03, num_leaves=31,
+                random_state=42, n_jobs=-1, verbose=-1
+            )
+            res = evaluate_proba_wf("LightGBM", lgbm_p, X_h, y_h, h, n_splits=n_splits)
+            if res:
+                proba_results.append(res)
+                print(f"    {res['model']:30s}  AUC={res['ROC-AUC']:.4f}  Brier={res['Brier']:.4f}  Acc={res['Accuracy@0.5']:.4f}")
+
+    # ---- Best model per horizon ----
+    if proba_results:
+        print("\n" + "=" * 60)
+        print("BEST GAIN-PROBABILITY MODEL PER HORIZON")
+        print("=" * 60)
+        for h in horizons:
+            h_res = [r for r in proba_results if r.get("horizon") == h and r["model"] != "Naive (base rate)"]
+            if not h_res:
+                continue
+            best = max(h_res, key=lambda r: r["ROC-AUC"])
+            print(f"  +{h}d  →  {best['model']:25s}  AUC={best['ROC-AUC']:.4f}  Brier={best['Brier']:.4f}")
+
     # ---- Save report ----
-    report_df = pd.DataFrame(results)
+    all_results = results + proba_results
+    report_df = pd.DataFrame(all_results)
     report_df.to_csv(REPORT_CSV, index=False, float_format="%.4f")
     print(f"\n[INFO] Evaluation report saved to: {REPORT_CSV}")
 
-    # ---- Best model selection ----
+    # ---- Best model selection (original tasks) ----
     reg_results = [r for r in results if r["task"] == "regression"]
     clf_results = [r for r in results if r["task"] == "classification"]
 
