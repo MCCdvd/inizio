@@ -35,3 +35,6 @@
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# ENEL dataset (user-provided, not committed)
+enel/ENEL.csv

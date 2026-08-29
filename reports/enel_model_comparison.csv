@@ -1,0 +1,8 @@
+model,task,MAE,RMSE,MAPE,Accuracy,Precision,Recall,F1
+Naive (Close[t]),regression,0.0391,0.0495,0.0058,,,,
+RandomForest Regressor,regression,0.0507,0.0667,0.0076,,,,
+LightGBM Regressor,regression,0.0547,0.0691,0.0082,,,,
+Naive (Always Up),classification,,,,0.5434,0.5434,1.0000,0.7032
+LogisticRegression,classification,,,,0.5297,0.6288,0.4064,0.4806
+RandomForest Classifier,classification,,,,0.5068,0.5666,0.4567,0.4779
+LightGBM Classifier,classification,,,,0.5297,0.6022,0.4225,0.4921
