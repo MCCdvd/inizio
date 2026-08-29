@@ -357,7 +357,8 @@ Questions? Issues? Ideas?
 
 ## 📊 ENEL Forecasting Pipeline
 
-A reproducible walk-forward forecasting pipeline for the ENEL daily time-series dataset.
+A reproducible walk-forward forecasting pipeline for ENEL stock data.
+Data can be fetched **directly from Yahoo Finance** (no CSV required) or loaded from a local CSV file.
 
 ### Overview
 
@@ -381,23 +382,12 @@ Validation uses **walk-forward / time-series split** (no data leakage).
 
 ### Features engineered
 
-- Existing columns: Open, High, Low, Close, Volume, MACD, Signal, MACD_hist, MA100, MA50, MA5, RSI, % Change, % Change vs Average
+- OHLCV columns: Open, High, Low, Close, Volume
+- Computed indicators (when using Yahoo Finance): MACD, Signal, MACD_hist, MA5, MA50, MA100, RSI, % Change, % Change vs Average
 - Close lag features (lags 1–10)
 - Daily return lag features (lags 1–10)
 - Volume lag features (lags 1–5)
 - Rolling mean/std of returns and volume (windows 5, 10, 20)
-
-### Dataset format
-
-The script expects a CSV file at `enel/ENEL.csv` with the following columns:
-
-```
-Date, Open, High, Low, Close, Volume, MACD, Signal, MACD_hist,
-MA100, MA50, MA5, RSI, % Change, % Change vs Average
-```
-
-Numeric values may use **Italian locale format** (comma decimal separator, dot thousands separator, e.g. `1.234,56`).  
-The `Date` column is parsed with `dayfirst=True`.
 
 ### Installation
 
@@ -407,19 +397,48 @@ pip install -r enel/requirements_enel.txt
 
 ### Usage
 
-```bash
-# Place your dataset at:
-#   enel/ENEL.csv
-# Then run:
+#### ✅ Recommended — fetch data directly from Yahoo Finance (no CSV needed)
 
+```bash
+# ENEL on Borsa Italiana (Milan exchange):
+python enel/enel_forecast.py --ticker ENEL.MI
+
+# Custom download period (default is 5y):
+python enel/enel_forecast.py --ticker ENEL.MI --period 10y
+
+# Skip slow ARIMA fitting:
+python enel/enel_forecast.py --ticker ENEL.MI --skip-arima
+```
+
+#### Alternative — use a local CSV file
+
+```bash
+# Default path enel/ENEL.csv:
 python enel/enel_forecast.py
 
-# Custom dataset path and number of walk-forward splits:
+# Custom path:
 python enel/enel_forecast.py --data /path/to/ENEL.csv --splits 5
-
-# Skip ARIMA (faster, recommended for large datasets):
-python enel/enel_forecast.py --skip-arima
 ```
+
+#### All options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--ticker` | — | Yahoo Finance symbol (e.g. `ENEL.MI`). Fetches data automatically. |
+| `--period` | `5y` | Download period: `1y`, `2y`, `5y`, `10y`, `max` (only with `--ticker`). |
+| `--data` | `enel/ENEL.csv` | Path to local CSV (used when `--ticker` is not set). |
+| `--splits` | `5` | Number of walk-forward folds. |
+| `--skip-arima` | off | Skip ARIMA (much faster for large datasets). |
+
+### Local CSV format (if not using Yahoo Finance)
+
+```
+Date, Open, High, Low, Close, Volume, MACD, Signal, MACD_hist,
+MA100, MA50, MA5, RSI, % Change, % Change vs Average
+```
+
+Numeric values may use **Italian locale format** (comma decimal, dot thousands, e.g. `1.234,56`).  
+The `Date` column is parsed with `dayfirst=True`.
 
 ### Outputs
 
@@ -430,5 +449,6 @@ python enel/enel_forecast.py --skip-arima
 
 - Dataset is sorted chronologically; the script re-sorts by Date to ensure this.
 - All features at time `t` predict targets at time `t+1` (no leakage).
+- When using `--ticker`, technical indicators (MACD, RSI, MAs) are computed automatically.
 - ARIMA is skipped automatically for datasets > 1000 rows (too slow for per-step re-fitting); use `--skip-arima` to skip it explicitly.
 - Missing values in rolling/lag features are median-imputed before model fitting.

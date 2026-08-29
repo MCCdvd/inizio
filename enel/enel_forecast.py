@@ -1,19 +1,28 @@
 """
 ENEL Time-Series Forecasting Pipeline
 ======================================
-Loads the ENEL CSV dataset, engineers features, and compares multiple
-forecasting models using walk-forward (time-series) cross-validation.
+Loads ENEL data either from a local CSV **or directly from Yahoo Finance**,
+engineers features, and compares multiple forecasting models using walk-forward
+(time-series) cross-validation.
 
 Targets
 -------
 - Regression:      next-day Close price
 - Classification:  next-day direction (1=Up, 0=Down/Flat)
 
-Usage
------
+Usage — Yahoo Finance (recommended, no CSV needed)
+---------------------------------------------------
+    python enel/enel_forecast.py --ticker ENEL.MI
+
+    # Custom period or exchange suffix
+    python enel/enel_forecast.py --ticker ENEL.MI --period 5y
+    python enel/enel_forecast.py --ticker ENI.MI  --period 3y
+
+Usage — local CSV file
+----------------------
     python enel/enel_forecast.py --data path/to/ENEL.csv
 
-The CSV is expected to contain columns:
+The CSV (if used) is expected to contain columns:
     Date, Open, High, Low, Close, Volume,
     MACD, Signal, MACD_hist, MA100, MA50, MA5, RSI,
     % Change, % Change vs Average
@@ -45,6 +54,14 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings("ignore")
+
+try:
+    import yfinance as yf
+
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
+    print("[INFO] yfinance not available — install it with: pip install yfinance")
 
 try:
     import lightgbm as lgb
@@ -115,6 +132,90 @@ def load_data(csv_path: str) -> pd.DataFrame:
 
     raw = raw.dropna(subset=["Close"]).reset_index(drop=True)
     print(f"[INFO] Loaded {len(raw)} rows from {csv_path}")
+    return raw
+
+
+# ---------------------------------------------------------------------------
+# 1b. Yahoo Finance loader
+# ---------------------------------------------------------------------------
+
+def _compute_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute MACD, RSI, and moving-average indicators from OHLCV data."""
+    close = df["Close"]
+
+    # --- Moving averages ---
+    df["MA5"]   = close.rolling(5).mean()
+    df["MA50"]  = close.rolling(50).mean()
+    df["MA100"] = close.rolling(100).mean()
+
+    # --- Daily % change ---
+    df["% Change"] = close.pct_change() * 100
+
+    # --- MACD (12/26/9 EMA) ---
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    df["MACD"]      = ema12 - ema26
+    df["Signal"]    = df["MACD"].ewm(span=9, adjust=False).mean()
+    df["MACD_hist"] = df["MACD"] - df["Signal"]
+
+    # --- RSI (14) ---
+    delta = close.diff()
+    gain  = delta.clip(lower=0).rolling(14).mean()
+    loss  = (-delta.clip(upper=0)).rolling(14).mean()
+    rs    = gain / loss.replace(0, np.nan)
+    df["RSI"] = 100 - (100 / (1 + rs))
+
+    # --- % Change vs rolling average (20-day) ---
+    df["% Change vs Average"] = (close / close.rolling(20).mean() - 1) * 100
+
+    return df
+
+
+def load_from_yahoo(ticker: str, period: str = "5y") -> pd.DataFrame:
+    """Download OHLCV data from Yahoo Finance and compute technical indicators.
+
+    Parameters
+    ----------
+    ticker : str
+        Yahoo Finance ticker symbol (e.g. 'ENEL.MI' for Borsa Italiana,
+        'ENEL' if available on another exchange).
+    period : str
+        Download period accepted by yfinance: '1y', '2y', '5y', '10y', 'max', etc.
+    """
+    if not YFINANCE_AVAILABLE:
+        raise ImportError("yfinance is required. Install it with: pip install yfinance")
+
+    print(f"[INFO] Downloading {ticker} from Yahoo Finance (period={period}) ...")
+    raw = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+
+    if raw.empty:
+        raise ValueError(
+            f"No data returned for ticker '{ticker}'. "
+            "Check the ticker symbol (e.g. 'ENEL.MI' for Milan exchange) "
+            "and your internet connection."
+        )
+
+    # Flatten MultiIndex columns produced by yfinance for a single ticker
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = raw.columns.get_level_values(0)
+
+    raw = raw.reset_index().rename(columns={"index": "Date", "Adj Close": "Close"})
+
+    # Ensure standard column names
+    raw = raw.rename(columns={"Date": "Date"})
+    raw["Date"] = pd.to_datetime(raw["Date"])
+    raw = raw.sort_values("Date").reset_index(drop=True)
+
+    # Keep only the columns we need (some yfinance versions include extras)
+    keep = [c for c in ["Date", "Open", "High", "Low", "Close", "Volume"] if c in raw.columns]
+    raw = raw[keep].copy()
+
+    # Compute technical indicators
+    raw = _compute_technical_indicators(raw)
+    raw = raw.dropna(subset=["Close"]).reset_index(drop=True)
+
+    print(f"[INFO] Downloaded {len(raw)} rows for {ticker} "
+          f"({raw['Date'].min().date()} → {raw['Date'].max().date()})")
     return raw
 
 
@@ -331,9 +432,20 @@ def arima_regression_wf(close_series, n_splits=5, order=(2, 1, 2)):
 # 6. Main pipeline
 # ---------------------------------------------------------------------------
 
-def run_pipeline(csv_path: str, n_splits: int = 5, skip_arima: bool = False):
-    # ---- Load & feature engineering ----
-    df_raw = load_data(csv_path)
+def run_pipeline(data: "str | pd.DataFrame", n_splits: int = 5, skip_arima: bool = False):
+    """Run the full forecasting pipeline.
+
+    Parameters
+    ----------
+    data : str or pd.DataFrame
+        Either a path to a CSV file or a DataFrame already loaded/downloaded.
+    """
+    # ---- Load data (accept both a path and a pre-loaded DataFrame) ----
+    if isinstance(data, pd.DataFrame):
+        df_raw = data
+    else:
+        df_raw = load_data(data)
+    # ---- Feature engineering ----
     df = build_features(df_raw)
     feature_cols = get_feature_columns(df)
 
@@ -459,13 +571,44 @@ def run_pipeline(csv_path: str, n_splits: int = 5, skip_arima: bool = False):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="ENEL forecasting pipeline — walk-forward model comparison"
+        description="ENEL forecasting pipeline — walk-forward model comparison",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Fetch data directly from Yahoo Finance (ENEL on Borsa Italiana):
+  python enel/enel_forecast.py --ticker ENEL.MI
+
+  # Custom period:
+  python enel/enel_forecast.py --ticker ENEL.MI --period 10y
+
+  # Use a local CSV file instead:
+  python enel/enel_forecast.py --data enel/ENEL.csv
+
+  # Skip slow ARIMA fitting:
+  python enel/enel_forecast.py --ticker ENEL.MI --skip-arima
+        """,
     )
-    parser.add_argument(
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
+        "--ticker",
+        type=str,
+        default=None,
+        help="Yahoo Finance ticker symbol (e.g. ENEL.MI). "
+             "When set, data is downloaded automatically — no CSV needed.",
+    )
+    source.add_argument(
         "--data",
         type=str,
-        default="enel/ENEL.csv",
-        help="Path to the ENEL CSV dataset (default: enel/ENEL.csv)",
+        default=None,
+        help="Path to a local ENEL CSV dataset. "
+             "Ignored when --ticker is provided.",
+    )
+    parser.add_argument(
+        "--period",
+        type=str,
+        default="5y",
+        help="Download period for Yahoo Finance (default: 5y). "
+             "Examples: 1y, 2y, 5y, 10y, max. Only used with --ticker.",
     )
     parser.add_argument(
         "--splits",
@@ -483,17 +626,31 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    data_path = args.data
 
-    # Resolve relative paths from repo root
-    if not os.path.isabs(data_path):
-        candidate = REPO_ROOT / data_path
-        if candidate.exists():
-            data_path = str(candidate)
+    # ---- Decide data source ----
+    if args.ticker:
+        # Yahoo Finance path
+        try:
+            df_raw = load_from_yahoo(args.ticker, period=args.period)
+        except (ValueError, ImportError) as exc:
+            print(f"[ERROR] {exc}")
+            sys.exit(1)
+    else:
+        # CSV path (fall back to default location if neither flag given)
+        data_path = args.data or "enel/ENEL.csv"
+        if not os.path.isabs(data_path):
+            candidate = REPO_ROOT / data_path
+            if candidate.exists():
+                data_path = str(candidate)
 
-    if not os.path.exists(data_path):
-        print(f"[ERROR] Dataset not found at: {data_path}")
-        print("  Place the ENEL CSV file at enel/ENEL.csv or pass --data <path>")
-        sys.exit(1)
+        if not os.path.exists(data_path):
+            print(f"[ERROR] Dataset not found at: {data_path}")
+            print(
+                "  Options:\n"
+                "    1. Download from Yahoo Finance:  python enel/enel_forecast.py --ticker ENEL.MI\n"
+                "    2. Provide a local CSV:          python enel/enel_forecast.py --data /path/to/ENEL.csv"
+            )
+            sys.exit(1)
+        df_raw = load_data(data_path)
 
-    run_pipeline(data_path, n_splits=args.splits, skip_arima=args.skip_arima)
+    run_pipeline(df_raw, n_splits=args.splits, skip_arima=args.skip_arima)
