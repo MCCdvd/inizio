@@ -352,3 +352,83 @@ Questions? Issues? Ideas?
 ---
 
 **Made with ❤️ for algo traders and RL enthusiasts**
+
+---
+
+## 📊 ENEL Forecasting Pipeline
+
+A reproducible walk-forward forecasting pipeline for the ENEL daily time-series dataset.
+
+### Overview
+
+The pipeline (`enel/enel_forecast.py`) compares multiple models for:
+- **Regression**: predicting next-day Close price (MAE, RMSE, MAPE)
+- **Classification**: predicting next-day direction Up/Down (Accuracy, Precision, Recall, F1)
+
+Models evaluated:
+| Model | Task |
+|-------|------|
+| Naive (Close[t]) | Regression baseline |
+| ARIMA(2,1,2) | Regression (statistical) |
+| RandomForest Regressor | Regression (ML) |
+| LightGBM Regressor | Regression (ML) |
+| Naive (Always Up) | Classification baseline |
+| LogisticRegression | Classification |
+| RandomForest Classifier | Classification (ML) |
+| LightGBM Classifier | Classification (ML) |
+
+Validation uses **walk-forward / time-series split** (no data leakage).
+
+### Features engineered
+
+- Existing columns: Open, High, Low, Close, Volume, MACD, Signal, MACD_hist, MA100, MA50, MA5, RSI, % Change, % Change vs Average
+- Close lag features (lags 1–10)
+- Daily return lag features (lags 1–10)
+- Volume lag features (lags 1–5)
+- Rolling mean/std of returns and volume (windows 5, 10, 20)
+
+### Dataset format
+
+The script expects a CSV file at `enel/ENEL.csv` with the following columns:
+
+```
+Date, Open, High, Low, Close, Volume, MACD, Signal, MACD_hist,
+MA100, MA50, MA5, RSI, % Change, % Change vs Average
+```
+
+Numeric values may use **Italian locale format** (comma decimal separator, dot thousands separator, e.g. `1.234,56`).  
+The `Date` column is parsed with `dayfirst=True`.
+
+### Installation
+
+```bash
+pip install -r enel/requirements_enel.txt
+```
+
+### Usage
+
+```bash
+# Place your dataset at:
+#   enel/ENEL.csv
+# Then run:
+
+python enel/enel_forecast.py
+
+# Custom dataset path and number of walk-forward splits:
+python enel/enel_forecast.py --data /path/to/ENEL.csv --splits 5
+
+# Skip ARIMA (faster, recommended for large datasets):
+python enel/enel_forecast.py --skip-arima
+```
+
+### Outputs
+
+- **Console**: metrics table + best model recommendation
+- **`reports/enel_model_comparison.csv`**: full comparison table saved automatically
+
+### Assumptions
+
+- Dataset is sorted chronologically; the script re-sorts by Date to ensure this.
+- All features at time `t` predict targets at time `t+1` (no leakage).
+- ARIMA is skipped automatically for datasets > 1000 rows (too slow for per-step re-fitting); use `--skip-arima` to skip it explicitly.
+- Missing values in rolling/lag features are median-imputed before model fitting.
